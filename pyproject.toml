@@ -2,11 +2,24 @@
 name = "spark-ast-lineage"
 version = "0.1.0"
 description = "Static analysis of Spark table lineage using AST"
-authors = [{ name = "Ricardo Espantaleón Pérez", email = "respantaleonp@outlook.es" }]
+authors = [
+    { name = "Ricardo Espantaleón Pérez", email = "respantaleonp@outlook.es" },
+]
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "sqlparse>=0.5.3",
+]
 
 [project.scripts]
 spark-ast-lineage = "spark_ast_lineage.cli:main"
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "mypy>=1.15.0",
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.4",
+    "ruff>=0.9.7",
+]
