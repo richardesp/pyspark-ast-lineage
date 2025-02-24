@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: Run Black
+        entry: uv run black --check .
+        language: system
+        types: [python]
+
+      - id: ruff
+        name: Run Ruff
+        entry: uv run ruff check .
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: Run MyPy
+        entry: uv run mypy src/
+        language: system
+        types: [python]
+
+      - id: pytest
+        name: Run Pytest
+        entry: uv run pytest tests/
+        language: system
+        pass_filenames: false 
+        types: [python]
