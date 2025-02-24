@@ -132,3 +132,62 @@ df = spark.read.table(table_name)
     """
     tables = PysparkTablesExtractor.extract_tables_from_code(code)
     assert tables == {"west_retail_q2_2024"}
+
+
+def test_spark_read_table_with_dictionary():
+    code = """
+tables = {"primary": "orders", "backup": "orders_backup"}
+df = spark.read.table(tables["primary"])
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"orders"}
+
+
+def test_spark_read_table_with_nested_dictionary():
+    code = """
+tables = {"sales": {"q1": "sales_q1", "q2": "sales_q2"}}
+df = spark.read.table(tables["sales"]["q1"])
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"sales_q1"}
+
+
+def test_spark_read_table_with_list_of_tables():
+    code = """
+table_names = ["customers", "orders"]
+df = spark.read.table(table_names[0])
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"customers"}
+
+
+def test_spark_read_table_with_loop():
+    code = """
+table_names = ["sales_q1", "sales_q2"]
+for table in table_names:
+    df = spark.read.table(table)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"sales_q1", "sales_q2"}
+
+
+def test_spark_read_table_with_tuple():
+    code = """
+tables = ("users", "orders")
+df = spark.read.table(tables[1])
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"orders"}
+
+
+def test_spark_read_table_with_if_else():
+    code = """
+is_backup = True
+if is_backup:
+    table_name = "backup_data"
+else:
+    table_name = "live_data"
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"backup_data", "live_data"}
