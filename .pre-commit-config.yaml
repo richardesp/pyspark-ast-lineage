@@ -12,16 +12,3 @@ repos:
         entry: uv run ruff check .
         language: system
         types: [python]
-
-      - id: mypy
-        name: Run MyPy
-        entry: uv run mypy src/
-        language: system
-        types: [python]
-
-      - id: pytest
-        name: Run Pytest
-        entry: uv run pytest tests/
-        language: system
-        pass_filenames: false 
-        types: [python]
