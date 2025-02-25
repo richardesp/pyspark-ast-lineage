@@ -1,5 +1,9 @@
 import ast
+import logging
+
 from spark_ast_lineage.analyzer.extractors import SQLExtractor, TableExtractor
+
+logger = logging.getLogger(__name__)
 
 
 class PysparkTablesExtractor:
@@ -16,6 +20,9 @@ class PysparkTablesExtractor:
         Returns:
             set: A set of unique table names found in the code.
         """
+
+        logger.debug("Extracting tables from code")
+
         tree = ast.parse(code)
         tables = set()
 
@@ -33,11 +40,16 @@ class PysparkTablesExtractor:
     @staticmethod
     def _get_extractor(node):
         """Returns the appropriate extractor based on the AST node type"""
+
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if node.func.attr == "sql":
+                logger.debug("Using SQLExtractor for node Call")
                 return SQLExtractor()
+
             elif node.func.attr == "table":
+                logger.debug("Using TableExtractor for node Call")
                 return TableExtractor()  # Updated to support variable extraction
+
         return None
 
     @staticmethod
@@ -60,6 +72,9 @@ class PysparkTablesExtractor:
                 )
                 if value:
                     variables[var_name] = value
+
+        logger.debug(f"Extracted variables: {variables}")
+
         return variables
 
     @staticmethod
