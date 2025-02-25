@@ -18,6 +18,16 @@ df = spark.read.table(table_name)
     assert tables == {"sales_data"}
 
 
+def test_spark_read_table_with_variable_inside_variable():
+    code = """
+var = "sales_data"
+table_name = var
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"sales_data"}
+
+
 def test_spark_read_table_with_concatenation():
     code = """
 table_prefix = "sales"
