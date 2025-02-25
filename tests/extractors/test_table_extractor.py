@@ -1,4 +1,4 @@
-from src.spark_ast_lineage.analyzer.pyspark_tables_extractor import (
+from spark_ast_lineage.analyzer.pyspark_tables_extractor import (
     PysparkTablesExtractor,
 )
 
