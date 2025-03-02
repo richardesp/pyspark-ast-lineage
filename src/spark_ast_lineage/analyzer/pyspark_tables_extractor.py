@@ -64,14 +64,50 @@ class PysparkTablesExtractor:
             dict: A dictionary of variable names and their evaluated values.
         """
         variables = {}
+
         for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
-                var_name = node.targets[0].id  # Variable name
+            if isinstance(node, ast.Assign):
+                # Extract values from the assignment
                 value = PysparkTablesExtractor._evaluate_expression(
                     node.value, variables
                 )
-                if value:
-                    variables[var_name] = value
+
+                # Handle multiple targets in assignment (a = b = value)
+                for target in node.targets:
+                    if isinstance(target, ast.Name):  # Standard variable assignment
+
+                        logger.debug(f"isinstance(target, ast.Name): {type(target)}")
+
+                        logger.debug(f"target.id: {target.id}. value: {value}")
+
+                        variables[target.id] = value
+
+                    elif isinstance(
+                        target, (ast.Tuple, ast.List)
+                    ):  # Unpacking (a, b = value)
+                        if isinstance(value, (tuple, list)) and len(target.elts) == len(
+                            value
+                        ):
+                            logger.debug(
+                                f"isinstance(value, (tuple, list)): {type(value)}"
+                            )
+
+                            for var, val in zip(target.elts, value):
+
+                                logger.debug(f"var, val in zip(): {var, val}")
+                                if isinstance(var, ast.Name):
+                                    variables[var.id] = val
+
+                    elif isinstance(
+                        target, ast.Attribute
+                    ):  # Attribute assignment (self.a = value)
+                        logger.debug(
+                            f"isinstance(target, ast.Attribute): {type(target)}"
+                        )
+
+                        attr_name = PysparkTablesExtractor._get_attribute_name(target)
+                        if attr_name:
+                            variables[attr_name] = value
 
         logger.debug(f"Extracted variables: {variables}")
 
