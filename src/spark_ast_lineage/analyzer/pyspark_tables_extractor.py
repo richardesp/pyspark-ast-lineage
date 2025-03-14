@@ -132,6 +132,18 @@ class PysparkTablesExtractor:
                     if None not in args:  # Ensure all arguments are resolved
                         return expr.func.value.value.format(*args)
 
+                # Handle str.join()
+                if (
+                    method_name == "join"
+                    and isinstance(expr.func.value, ast.Constant)
+                    and isinstance(expr.func.value.value, str)
+                ):
+                    iterable = PysparkTablesExtractor._evaluate_expression(
+                        expr.args[0], variables
+                    )
+                    if isinstance(iterable, list):
+                        return expr.func.value.value.join(map(str, iterable))
+
             else:
                 return None
 
