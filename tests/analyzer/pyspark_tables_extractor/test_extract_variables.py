@@ -64,3 +64,69 @@ def test_ignore_expressions():
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert variables == {}
+
+
+def test_string_concatenation():
+    code = """
+prefix = "sales"
+year = "2024"
+table_name = prefix + "_" + year
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"prefix": "sales", "year": "2024", "table_name": "sales_2024"}
+
+
+def test_string_format_method():
+    code = """
+prefix = "sales"
+year = "2024"
+table_name = "{}_{}".format(prefix, year)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"prefix": "sales", "year": "2024", "table_name": "sales_2024"}
+
+
+def test_f_string():
+    code = """
+prefix = "sales"
+year = "2024"
+table_name = f"{prefix}_{year}"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"prefix": "sales", "year": "2024", "table_name": "sales_2024"}
+
+
+def test_string_join_method():
+    code = """
+parts = ["sales", "2024"]
+table_name = "_".join(parts)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"parts": ["sales", "2024"], "table_name": "sales_2024"}
+
+
+def test_string_slicing():
+    code = """
+full_table_name = "sales_2024_backup"
+table_name = full_table_name[:10]  # Extracts "sales_2024"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {
+        "full_table_name": "sales_2024_backup",
+        "table_name": "sales_2024",
+    }
+
+
+def test_string_multiplication():
+    code = """
+table_prefix = "sale" * 2
+table_name = table_prefix + "_2024"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table_prefix": "salesale", "table_name": "salesale_2024"}
