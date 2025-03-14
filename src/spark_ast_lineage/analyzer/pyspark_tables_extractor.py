@@ -7,91 +7,6 @@ from spark_ast_lineage.analyzer.extractors import SQLExtractor, TableExtractor
 logger = logging.getLogger(__name__)
 
 
-class SafeEvaluator(ast.NodeVisitor):
-
-    SAFE_NODES = {
-        ast.Expression,
-        ast.BinOp,
-        ast.UnaryOp,
-        ast.Constant,
-        ast.Constant,
-        ast.List,
-        ast.Tuple,
-        ast.Dict,
-        ast.Set,
-        ast.Name,
-        ast.Load,
-        ast.Add,
-        ast.Sub,
-        ast.Mult,
-        ast.Div,
-        ast.Mod,
-        ast.Pow,
-        ast.Constant,
-    }
-
-    def __init__(self, variables):
-        self.variables = variables
-
-    def visit(self, node):
-        if not isinstance(node, tuple(self.SAFE_NODES)):
-            raise ValueError(f"Unsafe operation detected: {ast.dump(node)}")
-        return super().visit(node)
-
-    def visit_BinOp(self, node):
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-
-        if isinstance(node.op, ast.Add):
-            return left + right
-        elif isinstance(node.op, ast.Sub):
-            return left - right
-        elif isinstance(node.op, ast.Mult):
-            return left * right
-        elif isinstance(node.op, ast.Div):
-            return left / right
-        elif isinstance(node.op, ast.Mod):
-            return left % right
-        elif isinstance(node.op, ast.Pow):
-            return left**right
-        else:
-            raise ValueError("Unsupported operation")
-
-    def visit_Num(self, node):
-        return node.n
-
-    def visit_Str(self, node):
-        return node.s
-
-    def visit_Constant(self, node):  # For Python 3.8+
-        return node.value
-
-    def visit_List(self, node):
-        return [self.visit(elt) for elt in node.elts]
-
-    def visit_Tuple(self, node):
-        return tuple(self.visit(elt) for elt in node.elts)
-
-    def visit_Dict(self, node):
-        return {self.visit(k): self.visit(v) for k, v in zip(node.keys, node.values)}
-
-    def visit_Name(self, node):
-        if node.id in self.variables:
-            return self.variables[node.id]
-        raise ValueError(f"Unknown variable: {node.id}")
-
-    def evaluate(self, expr):
-        """
-        Evaluates a given expression safely.
-        """
-        try:
-            tree = ast.parse(expr, mode="eval")
-            return self.visit(tree.body)
-        except Exception as e:
-            logger.warning(f"Evaluation error: {e}")
-            return None
-
-
 class PysparkTablesExtractor:
     """Factory to return appropriate extractors for AST nodes"""
 
@@ -143,35 +58,91 @@ class PysparkTablesExtractor:
 
     @staticmethod
     def _evaluate_expression(expr, variables):
-        """
-        Evaluates an AST expression safely.
-
-        Args:
-            expr (ast.expr): The right-hand side of an assignment.
-            variables (dict): The current variables for lookup.
-
-        Returns:
-            The evaluated value or None if it cannot be evaluated.
-        """
         try:
-            # Convert AST expression back to source
-            expr_code = ast.unparse(expr)  # Python 3.9+
+            if isinstance(expr, ast.Dict):  # Handle dictionary literals
+                keys = [
+                    PysparkTablesExtractor._evaluate_expression(k, variables)
+                    for k in expr.keys
+                ]
+                values = [
+                    PysparkTablesExtractor._evaluate_expression(v, variables)
+                    for v in expr.values
+                ]
+                return dict(zip(keys, values))
 
-            logger.debug(f"Evaluating expression: {expr_code}")
+            elif isinstance(expr, ast.List):  # Handle list literals
+                return [
+                    PysparkTablesExtractor._evaluate_expression(e, variables)
+                    for e in expr.elts
+                ]
 
-            # Evaluate expression safely with access only to known variables
-            result = eval(expr_code, {"__builtins__": {}}, variables)
+            elif isinstance(expr, ast.Tuple):  # Handle tuple literals
+                return tuple(
+                    PysparkTablesExtractor._evaluate_expression(e, variables)
+                    for e in expr.elts
+                )
 
-            logger.debug(f"Evaluated expression result: {result}")
-            return result
+            elif isinstance(expr, ast.JoinedStr):  # Handle f-strings
+                evaluated_parts = []
+                for value in expr.values:
+                    if isinstance(value, ast.FormattedValue):
+                        if (
+                            isinstance(value.value, ast.Name)
+                            and value.value.id in variables
+                        ):
+                            evaluated_parts.append(str(variables[value.value.id]))
+                        else:
+                            return None
+                    elif isinstance(value, ast.Constant):
+                        evaluated_parts.append(value.value)
+                    elif isinstance(value, ast.Str):
+                        evaluated_parts.append(value.s)
+                return "".join(evaluated_parts)
+
+            elif isinstance(expr, ast.BinOp) and isinstance(
+                expr.op, ast.Add
+            ):  # Handle concatenation
+                left = PysparkTablesExtractor._evaluate_expression(expr.left, variables)
+                right = PysparkTablesExtractor._evaluate_expression(
+                    expr.right, variables
+                )
+                if isinstance(left, str) and isinstance(right, str):
+                    return left + right
+
+            elif isinstance(expr, ast.Constant):
+                return expr.value
+
+            elif isinstance(expr, ast.Name) and expr.id in variables:
+                return variables[expr.id]
+
+            elif isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute):
+                method_name = expr.func.attr
+
+                # Handle str.format()
+                if (
+                    method_name == "format"
+                    and isinstance(expr.func.value, ast.Constant)
+                    and isinstance(expr.func.value.value, str)
+                ):
+                    # Evaluate arguments
+                    args = [
+                        PysparkTablesExtractor._evaluate_expression(arg, variables)
+                        for arg in expr.args
+                    ]
+                    if None not in args:  # Ensure all arguments are resolved
+                        return expr.func.value.value.format(*args)
+
+            else:
+                return None
+
         except Exception as e:
             logger.warning(f"Failed to evaluate expression: {e}")
-            return None  # Return None if evaluation fails
+            return None
 
     @staticmethod
     def _extract_variables(tree, code):
         """
-        Extracts variable assignments from AST safely.
+        Extracts primitive variable assignments (strings, numbers, lists, dicts) from AST safely.
 
         Args:
             tree (ast.AST): The parsed AST tree.
@@ -182,7 +153,6 @@ class PysparkTablesExtractor:
         """
         variables = {}
         code = textwrap.dedent(str(code))  # Normalize indentation
-        evaluator = SafeEvaluator(variables)  # Safe evaluator instance
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
@@ -190,18 +160,19 @@ class PysparkTablesExtractor:
                     f"Processing assignment: {ast.get_source_segment(code, node)}"
                 )
 
+                value = None
                 try:
-                    expr_code = ast.unparse(
-                        node.value
-                    )  # Convert AST to source (Python 3.9+)
-                    value = evaluator.evaluate(expr_code)  # Evaluate safely
+                    value = PysparkTablesExtractor._evaluate_expression(
+                        node.value, variables
+                    )  # Evaluate expression
+
                 except Exception as e:
                     logger.warning(f"Failed to evaluate: {e}")
                     value = None  # If unsafe, assign None
 
-                # Handle different assignment cases
+                # Handle variable unpacking (tuples, lists)
                 for target in node.targets:
-                    if isinstance(target, ast.Name):  # Single variable assignment
+                    if isinstance(target, ast.Name):  # Single variable assignments
                         logger.debug(f"Assigning {target.id} = {value}")
                         variables[target.id] = value
 
@@ -213,12 +184,6 @@ class PysparkTablesExtractor:
                                 if isinstance(var, ast.Name):
                                     logger.debug(f"Unpacking: {var.id} = {val}")
                                     variables[var.id] = val
-
-                    elif isinstance(target, ast.Attribute):  # Object attribute
-                        attr_name = PysparkTablesExtractor._get_attribute_name(target)
-                        if attr_name:
-                            logger.debug(f"Setting attribute {attr_name} = {value}")
-                            variables[attr_name] = value
 
         logger.debug(f"Extracted variables: {variables}")
         return variables
