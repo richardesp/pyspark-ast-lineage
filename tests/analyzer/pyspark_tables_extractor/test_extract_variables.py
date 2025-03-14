@@ -1,5 +1,4 @@
 import ast
-import pytest
 
 from spark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
 
@@ -65,7 +64,3 @@ def test_ignore_expressions():
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert variables == {}
-
-
-if __name__ == "__main__":
-    pytest.main()
