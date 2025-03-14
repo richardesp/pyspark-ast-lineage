@@ -119,6 +119,9 @@ class PysparkTablesExtractor:
         for node in ast.walk(tree):
             extractor = PysparkTablesExtractor._get_extractor(node)
             if extractor:
+                logger.debug(f"Current extractor: {extractor}")
+                logger.debug(f"Variables to process: {variables}")
+
                 tables.update(extractor.extract(node, variables))  # Pass variables
 
         return tables
