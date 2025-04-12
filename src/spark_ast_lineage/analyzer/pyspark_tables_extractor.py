@@ -109,6 +109,49 @@ class PysparkTablesExtractor:
                 if isinstance(left, str) and isinstance(right, str):
                     return left + right
 
+            elif isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Mod):
+                left = PysparkTablesExtractor._evaluate_expression(expr.left, variables)
+                right = PysparkTablesExtractor._evaluate_expression(
+                    expr.right, variables
+                )
+                if isinstance(left, str) and isinstance(right, (tuple, list)):
+                    return left % tuple(right)
+
+            elif isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Mult):
+                left = PysparkTablesExtractor._evaluate_expression(expr.left, variables)
+                right = PysparkTablesExtractor._evaluate_expression(
+                    expr.right, variables
+                )
+                if isinstance(left, str) and isinstance(right, int):
+                    return left * right
+                if isinstance(right, str) and isinstance(left, int):
+                    return right * left
+
+            elif isinstance(expr, ast.Subscript):
+                value = PysparkTablesExtractor._evaluate_expression(
+                    expr.value, variables
+                )
+                if isinstance(expr.slice, ast.Constant):  # e.g. [0]
+                    index = expr.slice.value
+                elif isinstance(expr.slice, ast.Index):  # older Python versions
+                    index = PysparkTablesExtractor._evaluate_expression(
+                        expr.slice.value, variables
+                    )
+                elif isinstance(expr.slice, ast.Slice):
+                    lower = PysparkTablesExtractor._evaluate_expression(
+                        expr.slice.lower, variables
+                    )
+                    upper = PysparkTablesExtractor._evaluate_expression(
+                        expr.slice.upper, variables
+                    )
+                    if isinstance(value, str):
+                        return value[lower:upper]
+                    return None
+                else:
+                    index = None
+                if isinstance(value, (list, tuple, dict)) and index is not None:
+                    return value[index]
+
             elif isinstance(expr, ast.Constant):
                 return expr.value
 
@@ -196,6 +239,23 @@ class PysparkTablesExtractor:
                                 if isinstance(var, ast.Name):
                                     logger.debug(f"Unpacking: {var.id} = {val}")
                                     variables[var.id] = val
+
+                    elif isinstance(target, ast.Attribute):
+                        attr_name = PysparkTablesExtractor._get_attribute_name(target)
+                        if attr_name:
+                            logger.debug(f"Assigning {attr_name} = {value}")
+                            variables[attr_name] = value
+
+            elif isinstance(node, ast.If):
+                body_vars = PysparkTablesExtractor._extract_variables(
+                    ast.Module(body=node.body, type_ignores=[]), code
+                )
+                orelse_vars = PysparkTablesExtractor._extract_variables(
+                    ast.Module(body=node.orelse, type_ignores=[]), code
+                )
+                for key, val in {**body_vars, **orelse_vars}.items():
+                    if key not in variables:
+                        variables[key] = val
 
         logger.debug(f"Extracted variables: {variables}")
         return variables
