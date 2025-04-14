@@ -386,10 +386,8 @@ class PysparkTablesExtractor:
                 body_tree = ast.Module(body=node.body, type_ignores=[])
                 orelse_tree = ast.Module(body=node.orelse, type_ignores=[])
 
-                body_vars = PysparkTablesExtractor.extract_possible_variable_values(
-                    body_tree, code
-                )
-                orelse_vars = PysparkTablesExtractor.extract_possible_variable_values(
+                body_vars = PysparkTablesExtractor._extract_variables(body_tree, code)
+                orelse_vars = PysparkTablesExtractor._extract_variables(
                     orelse_tree, code
                 )
 
