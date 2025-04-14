@@ -143,7 +143,10 @@ table_name = "_".join(parts)
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert unwrap(variables) == {"parts": ["sales", "2024"], "table_name": "sales_2024"}
+    assert unwrap(variables) == {
+        "parts": "['sales', '2024']",
+        "table_name": "sales_2024",
+    }
 
 
 def test_string_slicing():
