@@ -173,3 +173,78 @@ table_name = table_prefix + "_2024"
         "table_prefix": "salesale",
         "table_name": "salesale_2024",
     }
+
+
+def test_percent_formatting():
+    code = """
+table_base = "departments"
+month = "jan"
+table_name = "%s_%s" % (table_base, month)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables) == {
+        "table_base": "departments",
+        "month": "jan",
+        "table_name": "departments_jan",
+    }
+
+
+def test_dictionary_access():
+    code = """
+tables = {"primary": "orders", "backup": "orders_backup"}
+table_name = tables["primary"]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables) == {
+        "tables": {"primary": "orders", "backup": "orders_backup"},
+        "table_name": "orders",
+    }
+
+
+def test_nested_dictionary_access():
+    code = """
+tables = {"sales": {"q1": "sales_q1", "q2": "sales_q2"}}
+table_name = tables["sales"]["q1"]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables) == {
+        "tables": {"sales": {"q1": "sales_q1", "q2": "sales_q2"}},
+        "table_name": "sales_q1",
+    }
+
+
+def test_list_indexing():
+    code = """
+table_names = ["customers", "orders"]
+table_name = table_names[0]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables) == {
+        "table_names": ["customers", "orders"],
+        "table_name": "customers",
+    }
+
+
+def test_tuple_indexing():
+    code = """
+tables = ("users", "orders")
+table_name = tables[1]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables) == {"tables": ("users", "orders"), "table_name": "orders"}
+
+
+def test_for_loop_assignment():
+    code = """
+table_names = ["sales_q1", "sales_q2"]
+for table in table_names:
+    df = spark.read.table(table)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert unwrap(variables)["table_names"] == ["sales_q1", "sales_q2"]
