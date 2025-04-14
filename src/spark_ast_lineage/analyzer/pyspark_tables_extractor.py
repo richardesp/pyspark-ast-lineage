@@ -197,67 +197,152 @@ class PysparkTablesExtractor:
     @staticmethod
     def _extract_variables(tree, code):
         """
-        Extracts primitive variable assignments (strings, numbers, lists, dicts) from AST safely.
+        Extracts all *possible* variable assignments (including across branches)
+        and evaluates their values using AST.
 
         Args:
-            tree (ast.AST): The parsed AST tree.
-            code (str): The original source code.
+            tree (ast.AST): Parsed AST tree.
+            code (str): Source code.
 
         Returns:
-            dict: A dictionary of variable names and their evaluated values.
+            dict[str, set]: Variable names mapped to a set of possible values.
         """
         variables = {}
-        code = textwrap.dedent(str(code))  # Normalize indentation
+        code = textwrap.dedent(str(code))
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                logger.debug(
-                    f"Processing assignment: {ast.get_source_segment(code, node)}"
-                )
+        def custom_literal_eval(expr_node, variables):
+            try:
+                logger.debug(f"Trying to apply ast.literal_eval to {expr_node}")
+                return ast.literal_eval(expr_node)
+            except Exception:
+                logger.debug(f"Failed evaluating {expr_node}")
+                pass  # fallback below
 
-                value = None
-                try:
-                    value = PysparkTablesExtractor._evaluate_expression(
-                        node.value, variables
-                    )  # Evaluate expression
+            logger.debug(f"expr_node type: {type(expr_node)}")
 
-                except Exception as e:
-                    logger.warning(f"Failed to evaluate: {e}")
-                    value = None  # If unsafe, assign None
+            # Handle string concatenation
+            if isinstance(expr_node, ast.BinOp) and isinstance(expr_node.op, ast.Add):
+                logger.debug(f"String concatenations detected {expr_node}")
+                left = custom_literal_eval(expr_node.left, variables)
+                right = custom_literal_eval(expr_node.right, variables)
+                if left is not None and right is not None:
+                    return str(left) + str(right)
 
-                # Handle variable unpacking (tuples, lists)
-                for target in node.targets:
-                    if isinstance(target, ast.Name):  # Single variable assignments
-                        logger.debug(f"Assigning {target.id} = {value}")
-                        variables[target.id] = value
+            # Handle f-strings
+            if isinstance(expr_node, ast.JoinedStr):
+                parts = []
+                for val in expr_node.values:
+                    if isinstance(val, ast.FormattedValue):
+                        subval = custom_literal_eval(val.value, variables)
+                        if subval is None:
+                            return None
+                        parts.append(str(subval))
+                    elif isinstance(val, ast.Constant):
+                        parts.append(str(val.value))
+                return "".join(parts)
 
-                    elif isinstance(target, (ast.Tuple, ast.List)):  # Unpacking
-                        if isinstance(value, (tuple, list)) and len(target.elts) == len(
-                            value
+            # Handle .format() calls
+            if isinstance(expr_node, ast.Call):
+                if isinstance(expr_node.func, ast.Attribute):
+                    if expr_node.func.attr == "format":
+                        fmt = custom_literal_eval(expr_node.func.value, variables)
+                        args = [
+                            custom_literal_eval(arg, variables)
+                            for arg in expr_node.args
+                        ]
+                        if None not in args and isinstance(fmt, str):
+                            return fmt.format(*args)
+
+            # You could add .join([...]) support here later
+
+            return None  # fallback: not resolvable
+
+        def replace_names_with_constants(expr_node, variables):
+            class NameReplacer(ast.NodeTransformer):
+                def visit_Name(self, node):
+                    if node.id in variables:
+                        values = list(variables[node.id])
+                        if len(values) == 1:
+                            try:
+                                # Try to literal_eval for numbers, dicts, etc.
+                                value = ast.literal_eval(values[0])
+                            except Exception:
+                                value = values[0]
+                            return ast.copy_location(ast.Constant(value=value), node)
+                    return node
+
+            return NameReplacer().visit(expr_node)
+
+        def assign_variable(var_name, value):
+            if var_name not in variables:
+                variables[var_name] = set()
+            if isinstance(value, set):
+                variables[var_name].update(value)
+            else:
+                variables[var_name].add(value)
+
+        def process_assign(node):
+            try:
+                # Replace variable names with literal values
+                replaced_expr = replace_names_with_constants(node.value, variables)
+                source_expr = ast.unparse(replaced_expr)  # this must be a string
+                logger.debug(f"Evaluating expression string: {source_expr}")
+
+                # Only now evaluate the string safely
+                value_set = {str(custom_literal_eval(replaced_expr, variables))}
+
+            except Exception as e:
+                logger.warning(f"Failed to evaluate {ast.unparse(node)}: {e}")
+                value_set = {str(None)}
+
+            logger.debug(f"Processed assignment: {ast.unparse(node)} -> {value_set}")
+
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assign_variable(target.id, value_set)
+
+                elif isinstance(target, (ast.Tuple, ast.List)):
+                    raw = next(iter(value_set))
+                    try:
+                        unpacked = ast.literal_eval(raw)
+                        if isinstance(unpacked, (list, tuple)) and len(unpacked) == len(
+                            target.elts
                         ):
-                            for var, val in zip(target.elts, value):
-                                if isinstance(var, ast.Name):
-                                    logger.debug(f"Unpacking: {var.id} = {val}")
-                                    variables[var.id] = val
+                            for var_node, val in zip(target.elts, unpacked):
+                                if isinstance(var_node, ast.Name):
+                                    assign_variable(var_node.id, str(val))
+                        else:
+                            logger.warning(
+                                f"Cannot unpack: {raw} into {len(target.elts)} vars"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to unpack tuple/list: {raw} — {e}")
 
-                    elif isinstance(target, ast.Attribute):
-                        attr_name = PysparkTablesExtractor._get_attribute_name(target)
-                        if attr_name:
-                            logger.debug(f"Assigning {attr_name} = {value}")
-                            variables[attr_name] = value
+                elif isinstance(target, ast.Attribute):
+                    name = PysparkTablesExtractor._get_attribute_name(target)
+                    if name:
+                        assign_variable(name, value_set)
 
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                process_assign(node)
             elif isinstance(node, ast.If):
-                body_vars = PysparkTablesExtractor._extract_variables(
-                    ast.Module(body=node.body, type_ignores=[]), code
-                )
-                orelse_vars = PysparkTablesExtractor._extract_variables(
-                    ast.Module(body=node.orelse, type_ignores=[]), code
-                )
-                for key, val in {**body_vars, **orelse_vars}.items():
-                    if key not in variables:
-                        variables[key] = val
+                body_tree = ast.Module(body=node.body, type_ignores=[])
+                orelse_tree = ast.Module(body=node.orelse, type_ignores=[])
 
-        logger.debug(f"Extracted variables: {variables}")
+                body_vars = PysparkTablesExtractor.extract_possible_variable_values(
+                    body_tree, code
+                )
+                orelse_vars = PysparkTablesExtractor.extract_possible_variable_values(
+                    orelse_tree, code
+                )
+
+                all_keys = set(body_vars) | set(orelse_vars)
+                for key in all_keys:
+                    assign_variable(
+                        key, body_vars.get(key, set()) | orelse_vars.get(key, set())
+                    )
+
         return variables
 
     @staticmethod
