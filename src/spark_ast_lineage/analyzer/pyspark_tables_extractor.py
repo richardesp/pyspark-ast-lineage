@@ -219,6 +219,7 @@ class PysparkTablesExtractor:
                 pass  # fallback below
 
             logger.debug(f"expr_node type: {type(expr_node)}")
+            logger.debug(f"Current variables lookup: {variables}")
 
             # Handle string concatenation
             if isinstance(expr_node, ast.BinOp) and isinstance(expr_node.op, ast.Add):
@@ -241,19 +242,74 @@ class PysparkTablesExtractor:
                         parts.append(str(val.value))
                 return "".join(parts)
 
-            # Handle .format() calls
-            if isinstance(expr_node, ast.Call):
-                if isinstance(expr_node.func, ast.Attribute):
-                    if expr_node.func.attr == "format":
-                        fmt = custom_literal_eval(expr_node.func.value, variables)
-                        args = [
-                            custom_literal_eval(arg, variables)
-                            for arg in expr_node.args
-                        ]
-                        if None not in args and isinstance(fmt, str):
-                            return fmt.format(*args)
+            # Handle function calls (e.g. format, join)
+            if isinstance(expr_node, ast.Call) and isinstance(
+                expr_node.func, ast.Attribute
+            ):
+                attr = expr_node.func.attr
 
-            # You could add .join([...]) support here later
+                if attr == "format":
+                    logger.debug("Invoke for format() method detected")
+                    logger.debug(
+                        f"format() called on: {ast.unparse(expr_node.func.value)}, "
+                        f"with the following arguments: {[ast.unparse(arg) for arg in expr_node.args]}"
+                    )
+
+                    try:
+                        # Evaluate the format string
+                        fmt = ast.literal_eval(expr_node.func.value)
+                        if not isinstance(fmt, str):
+                            logger.warning("format() base is not a string")
+                            return None
+
+                        # Evaluate each format argument
+                        args = [ast.literal_eval(arg) for arg in expr_node.args]
+
+                        # Optionally: ensure all args are str-compatible (convert them)
+                        args = [str(a) for a in args]
+
+                        # Use the str.format static method
+                        result = str.format(fmt, *args)
+
+                        return result
+
+                    except Exception as e:
+                        logger.warning(f"format() evaluation failed: {e}")
+                        return None
+
+                # Handle '_'.join([...])
+                if expr_node.func.attr == "join":
+                    logger.debug("Invoke for join() method detected")
+                    logger.debug(
+                        f"join() called on: {ast.unparse(expr_node.func.value)}, "
+                        "with the following argument: {ast.unparse(expr_node.args[0])}"
+                    )
+
+                    try:
+                        # Safely evaluate the separator
+                        separator = ast.literal_eval(expr_node.func.value)
+                        if not isinstance(separator, str):
+                            logger.warning("join() separator is not a string")
+                            return None
+
+                        # Safely evaluate the iterable
+                        iterable_objects = ast.literal_eval(expr_node.args[0])
+                        if not isinstance(iterable_objects, (list, tuple)):
+                            logger.warning("join() argument is not a list/tuple")
+                            return None
+
+                        # Ensure all elements are strings
+                        if not all(isinstance(item, str) for item in iterable_objects):
+                            logger.warning("join() items must all be strings")
+                            return None
+
+                        expected_output = str.join(separator, iterable_objects)
+
+                        return expected_output
+
+                    except Exception as e:
+                        logger.warning(f"join() evaluation failed: {e}")
+                        return None
 
             return None  # fallback: not resolvable
 
