@@ -221,13 +221,22 @@ class PysparkTablesExtractor:
             logger.debug(f"expr_node type: {type(expr_node)}")
             logger.debug(f"Current variables lookup: {variables}")
 
-            # Handle string concatenation
-            if isinstance(expr_node, ast.BinOp) and isinstance(expr_node.op, ast.Add):
-                logger.debug(f"String concatenations detected {expr_node}")
+            # Handle string concatenation and multiplication
+            if isinstance(expr_node, ast.BinOp):
                 left = custom_literal_eval(expr_node.left, variables)
                 right = custom_literal_eval(expr_node.right, variables)
-                if left is not None and right is not None:
-                    return str(left) + str(right)
+
+                if isinstance(expr_node.op, ast.Add):
+                    logger.debug("Handling string concatenation with +")
+                    if left is not None and right is not None:
+                        return str(left) + str(right)
+
+                elif isinstance(expr_node.op, ast.Mult):
+                    logger.debug("Handling string multiplication with *")
+                    if isinstance(left, str) and isinstance(right, int):
+                        return left * right
+                    elif isinstance(right, str) and isinstance(left, int):
+                        return right * left
 
             # Handle f-strings
             if isinstance(expr_node, ast.JoinedStr):
@@ -242,7 +251,25 @@ class PysparkTablesExtractor:
                         parts.append(str(val.value))
                 return "".join(parts)
 
-            # Handle function calls (e.g. format, join)
+            # Handle slicing
+            if isinstance(expr_node, ast.Subscript) and isinstance(
+                expr_node.slice, ast.Slice
+            ):
+                value = custom_literal_eval(expr_node.value, variables)
+                if isinstance(value, str):
+                    lower = (
+                        custom_literal_eval(expr_node.slice.lower, variables)
+                        if expr_node.slice.lower
+                        else None
+                    )
+                    upper = (
+                        custom_literal_eval(expr_node.slice.upper, variables)
+                        if expr_node.slice.upper
+                        else None
+                    )
+                    return value[lower:upper]
+
+            # Handle function calls (format, join)
             if isinstance(expr_node, ast.Call) and isinstance(
                 expr_node.func, ast.Attribute
             ):
@@ -254,58 +281,43 @@ class PysparkTablesExtractor:
                         f"format() called on: {ast.unparse(expr_node.func.value)}, "
                         f"with the following arguments: {[ast.unparse(arg) for arg in expr_node.args]}"
                     )
-
                     try:
-                        # Evaluate the format string
                         fmt = ast.literal_eval(expr_node.func.value)
                         if not isinstance(fmt, str):
                             logger.warning("format() base is not a string")
                             return None
 
-                        # Evaluate each format argument
                         args = [ast.literal_eval(arg) for arg in expr_node.args]
-
-                        # Optionally: ensure all args are str-compatible (convert them)
                         args = [str(a) for a in args]
 
-                        # Use the str.format static method
-                        result = str.format(fmt, *args)
-
-                        return result
+                        return str.format(fmt, *args)
 
                     except Exception as e:
                         logger.warning(f"format() evaluation failed: {e}")
                         return None
 
-                # Handle '_'.join([...])
-                if expr_node.func.attr == "join":
+                elif attr == "join":
                     logger.debug("Invoke for join() method detected")
                     logger.debug(
                         f"join() called on: {ast.unparse(expr_node.func.value)}, "
-                        "with the following argument: {ast.unparse(expr_node.args[0])}"
+                        f"with the following argument: {ast.unparse(expr_node.args[0])}"
                     )
-
                     try:
-                        # Safely evaluate the separator
                         separator = ast.literal_eval(expr_node.func.value)
                         if not isinstance(separator, str):
                             logger.warning("join() separator is not a string")
                             return None
 
-                        # Safely evaluate the iterable
                         iterable_objects = ast.literal_eval(expr_node.args[0])
                         if not isinstance(iterable_objects, (list, tuple)):
                             logger.warning("join() argument is not a list/tuple")
                             return None
 
-                        # Ensure all elements are strings
                         if not all(isinstance(item, str) for item in iterable_objects):
                             logger.warning("join() items must all be strings")
                             return None
 
-                        expected_output = str.join(separator, iterable_objects)
-
-                        return expected_output
+                        return str.join(separator, iterable_objects)
 
                     except Exception as e:
                         logger.warning(f"join() evaluation failed: {e}")
