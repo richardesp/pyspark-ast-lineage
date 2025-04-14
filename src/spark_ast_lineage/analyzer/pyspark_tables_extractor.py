@@ -238,6 +238,25 @@ class PysparkTablesExtractor:
                     elif isinstance(right, str) and isinstance(left, int):
                         return right * left
 
+                elif isinstance(expr_node.op, ast.Mod):
+                    logger.debug("Handling percent string formatting with % operator")
+                    left = custom_literal_eval(expr_node.left, variables)
+                    right = custom_literal_eval(expr_node.right, variables)
+                    if isinstance(left, str) and isinstance(right, (tuple, list)):
+                        try:
+                            return left % tuple(right)
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to format string using % operator: {e}"
+                            )
+                    elif isinstance(left, str):
+                        try:
+                            return left % right
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to format string using % operator: {e}"
+                            )
+
             # Handle f-strings
             if isinstance(expr_node, ast.JoinedStr):
                 parts = []
