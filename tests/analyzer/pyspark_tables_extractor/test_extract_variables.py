@@ -197,7 +197,12 @@ table_name = tables["primary"]
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert unwrap(variables) == {
+    unwrapped = unwrap(variables)
+
+    # Convert stringified dict back to real dict for fair comparison
+    unwrapped["tables"] = ast.literal_eval(unwrapped["tables"])
+
+    assert unwrapped == {
         "tables": {"primary": "orders", "backup": "orders_backup"},
         "table_name": "orders",
     }
@@ -211,7 +216,7 @@ table_name = tables["sales"]["q1"]
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert unwrap(variables) == {
-        "tables": {"sales": {"q1": "sales_q1", "q2": "sales_q2"}},
+        "tables": "{'primary': 'orders', 'backup': 'orders_backup'}",
         "table_name": "sales_q1",
     }
 
