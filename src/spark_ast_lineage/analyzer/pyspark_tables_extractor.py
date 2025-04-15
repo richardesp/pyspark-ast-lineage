@@ -212,8 +212,7 @@ class PysparkTablesExtractor:
 
         def custom_literal_eval(expr_node, variables):
             try:
-
-                # Skip literal_eval if already a native Python constant (e.g., 0)
+                # Skip literal_eval if already a native constant
                 if isinstance(expr_node, (int, float, str, bool, list, tuple, dict)):
                     return expr_node
 
@@ -226,7 +225,7 @@ class PysparkTablesExtractor:
             logger.debug(f"expr_node type: {type(expr_node)}")
             logger.debug(f"Current variables lookup: {variables}")
 
-            # Handle string concatenation and multiplication
+            # Handle BinOp: string concat, multiplication, percent-formatting
             if isinstance(expr_node, ast.BinOp):
                 left = custom_literal_eval(expr_node.left, variables)
                 right = custom_literal_eval(expr_node.right, variables)
@@ -245,16 +244,7 @@ class PysparkTablesExtractor:
 
                 elif isinstance(expr_node.op, ast.Mod):
                     logger.debug("Handling percent string formatting with % operator")
-                    left = custom_literal_eval(expr_node.left, variables)
-                    right = custom_literal_eval(expr_node.right, variables)
-                    if isinstance(left, str) and isinstance(right, (tuple, list)):
-                        try:
-                            return left % tuple(right)
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to format string using % operator: {e}"
-                            )
-                    elif isinstance(left, str):
+                    if isinstance(left, str):
                         try:
                             return left % right
                         except Exception as e:
@@ -275,28 +265,32 @@ class PysparkTablesExtractor:
                         parts.append(str(val.value))
                 return "".join(parts)
 
-            # Handle subscript access like x[0], d["key"], nested["a"]["b"]
+            # Handle subscript access like x[0], d["key"], list[:2]
             if isinstance(expr_node, ast.Subscript):
-                container = custom_literal_eval(expr_node.value, variables)
+                container_node = expr_node.value
+                slice_node = expr_node.slice
 
-                # If container is still a stringified list, dict, or tuple — try to eval it again
-                if isinstance(container, str):
+                # Try to evaluate the container if it's a constant
+                if isinstance(container_node, ast.Constant):
                     try:
-                        container = ast.literal_eval(container)
+                        container = ast.literal_eval(container_node)
                     except Exception as e:
-                        logger.warning(f"Failed to literal_eval container string: {e}")
+                        logger.warning(f"Failed to literal_eval container: {e}")
                         return None
+                else:
+                    container = custom_literal_eval(container_node, variables)
 
-                # Handle slicing
-                if isinstance(expr_node.slice, ast.Slice):
+                # Slicing case (e.g., val[:10])
+                if isinstance(slice_node, ast.Slice):
+                    logger.debug("Trying to evaluate slicing")
                     lower = (
-                        custom_literal_eval(expr_node.slice.lower, variables)
-                        if expr_node.slice.lower
+                        custom_literal_eval(slice_node.lower, variables)
+                        if slice_node.lower
                         else None
                     )
                     upper = (
-                        custom_literal_eval(expr_node.slice.upper, variables)
-                        if expr_node.slice.upper
+                        custom_literal_eval(slice_node.upper, variables)
+                        if slice_node.upper
                         else None
                     )
                     try:
@@ -305,39 +299,21 @@ class PysparkTablesExtractor:
                         logger.warning(f"Failed to slice: {e}")
                         return None
 
-                # Handle indexing like list[0] or dict["key"]
+                # Indexing case (e.g., val[0], val['key'])
                 try:
-                    if hasattr(expr_node.slice, "value"):
-                        index = custom_literal_eval(expr_node.slice.value, variables)
-                    elif isinstance(expr_node.slice, ast.Constant):
-                        index = expr_node.slice.value
+                    if hasattr(slice_node, "value"):
+                        index = custom_literal_eval(slice_node.value, variables)
+                    elif isinstance(slice_node, ast.Constant):
+                        index = slice_node.value
                     else:
-                        index = custom_literal_eval(expr_node.slice, variables)
+                        index = custom_literal_eval(slice_node, variables)
 
                     return container[index]
                 except Exception as e:
                     logger.warning(f"Subscript access failed: {e}")
                     return None
 
-            # Handle slicing
-            if isinstance(expr_node, ast.Subscript) and isinstance(
-                expr_node.slice, ast.Slice
-            ):
-                value = custom_literal_eval(expr_node.value, variables)
-                if isinstance(value, str):
-                    lower = (
-                        custom_literal_eval(expr_node.slice.lower, variables)
-                        if expr_node.slice.lower
-                        else None
-                    )
-                    upper = (
-                        custom_literal_eval(expr_node.slice.upper, variables)
-                        if expr_node.slice.upper
-                        else None
-                    )
-                    return value[lower:upper]
-
-            # Handle function calls (format, join)
+            # Handle .format() and .join()
             if isinstance(expr_node, ast.Call) and isinstance(
                 expr_node.func, ast.Attribute
             ):
@@ -347,19 +323,12 @@ class PysparkTablesExtractor:
                     logger.debug("Invoke for format() method detected")
                     logger.debug(
                         f"format() called on: {ast.unparse(expr_node.func.value)}, "
-                        f"with the following arguments: {[ast.unparse(arg) for arg in expr_node.args]}"
+                        f"args: {[ast.unparse(arg) for arg in expr_node.args]}"
                     )
                     try:
                         fmt = ast.literal_eval(expr_node.func.value)
-                        if not isinstance(fmt, str):
-                            logger.warning("format() base is not a string")
-                            return None
-
-                        args = [ast.literal_eval(arg) for arg in expr_node.args]
-                        args = [str(a) for a in args]
-
-                        return str.format(fmt, *args)
-
+                        args = [str(ast.literal_eval(arg)) for arg in expr_node.args]
+                        return fmt.format(*args)
                     except Exception as e:
                         logger.warning(f"format() evaluation failed: {e}")
                         return None
@@ -368,30 +337,20 @@ class PysparkTablesExtractor:
                     logger.debug("Invoke for join() method detected")
                     logger.debug(
                         f"join() called on: {ast.unparse(expr_node.func.value)}, "
-                        f"with the following argument: {ast.unparse(expr_node.args[0])}"
+                        f"arg: {ast.unparse(expr_node.args[0])}"
                     )
                     try:
                         separator = ast.literal_eval(expr_node.func.value)
-                        if not isinstance(separator, str):
-                            logger.warning("join() separator is not a string")
-                            return None
-
-                        iterable_objects = ast.literal_eval(expr_node.args[0])
-                        if not isinstance(iterable_objects, (list, tuple)):
-                            logger.warning("join() argument is not a list/tuple")
-                            return None
-
-                        if not all(isinstance(item, str) for item in iterable_objects):
-                            logger.warning("join() items must all be strings")
-                            return None
-
-                        return str.join(separator, iterable_objects)
-
+                        iterable = ast.literal_eval(expr_node.args[0])
+                        if isinstance(separator, str) and all(
+                            isinstance(x, str) for x in iterable
+                        ):
+                            return separator.join(iterable)
                     except Exception as e:
                         logger.warning(f"join() evaluation failed: {e}")
                         return None
 
-            return None  # fallback: not resolvable
+            return None  # fallback
 
         def replace_names_with_constants(expr_node, variables):
             class NameReplacer(ast.NodeTransformer):
