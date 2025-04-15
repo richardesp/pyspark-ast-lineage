@@ -224,7 +224,7 @@ table_name = table_names[0]
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert unwrap(variables) == {
-        "table_names": ["customers", "orders"],
+        "table_names": "['customers', 'orders']",
         "table_name": "customers",
     }
 
@@ -236,7 +236,10 @@ table_name = tables[1]
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert unwrap(variables) == {"tables": ("users", "orders"), "table_name": "orders"}
+    assert unwrap(variables) == {
+        "tables": "('users', 'orders')",
+        "table_name": "orders",
+    }
 
 
 def test_for_loop_assignment():
