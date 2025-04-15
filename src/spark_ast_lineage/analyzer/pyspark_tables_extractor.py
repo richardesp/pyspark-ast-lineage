@@ -212,6 +212,11 @@ class PysparkTablesExtractor:
 
         def custom_literal_eval(expr_node, variables):
             try:
+
+                # Skip literal_eval if already a native Python constant (e.g., 0)
+                if isinstance(expr_node, (int, float, str, bool, list, tuple, dict)):
+                    return expr_node
+
                 logger.debug(f"Trying to apply ast.literal_eval to {expr_node}")
                 return ast.literal_eval(expr_node)
             except Exception:
@@ -269,6 +274,50 @@ class PysparkTablesExtractor:
                     elif isinstance(val, ast.Constant):
                         parts.append(str(val.value))
                 return "".join(parts)
+
+            # Handle subscript access like x[0], d["key"], nested["a"]["b"]
+            if isinstance(expr_node, ast.Subscript):
+                container = custom_literal_eval(expr_node.value, variables)
+
+                # If container is still a stringified list, dict, or tuple — try to eval it again
+                if isinstance(container, str):
+                    try:
+                        container = ast.literal_eval(container)
+                    except Exception as e:
+                        logger.warning(f"Failed to literal_eval container string: {e}")
+                        return None
+
+                # Handle slicing
+                if isinstance(expr_node.slice, ast.Slice):
+                    lower = (
+                        custom_literal_eval(expr_node.slice.lower, variables)
+                        if expr_node.slice.lower
+                        else None
+                    )
+                    upper = (
+                        custom_literal_eval(expr_node.slice.upper, variables)
+                        if expr_node.slice.upper
+                        else None
+                    )
+                    try:
+                        return container[lower:upper]
+                    except Exception as e:
+                        logger.warning(f"Failed to slice: {e}")
+                        return None
+
+                # Handle indexing like list[0] or dict["key"]
+                try:
+                    if hasattr(expr_node.slice, "value"):
+                        index = custom_literal_eval(expr_node.slice.value, variables)
+                    elif isinstance(expr_node.slice, ast.Constant):
+                        index = expr_node.slice.value
+                    else:
+                        index = custom_literal_eval(expr_node.slice, variables)
+
+                    return container[index]
+                except Exception as e:
+                    logger.warning(f"Subscript access failed: {e}")
+                    return None
 
             # Handle slicing
             if isinstance(expr_node, ast.Subscript) and isinstance(
