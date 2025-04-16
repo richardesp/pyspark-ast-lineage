@@ -227,6 +227,16 @@ class PysparkTablesExtractor:
             logger.debug(f"expr_node type: {type(expr_node)}")
             logger.debug(f"Current variables lookup: {variables}")
 
+            if isinstance(expr_node, ast.Attribute):
+                name = PysparkTablesExtractor._get_attribute_name(expr_node)
+                if name and name in variables:
+                    values = variables[name]
+                    if len(values) == 1:
+                        return next(iter(values))
+                    elif values:
+                        return next(iter(values))
+                return None
+
             if isinstance(expr_node, ast.IfExp):
 
                 test = custom_literal_eval(expr_node.test, variables)
@@ -604,6 +614,18 @@ class PysparkTablesExtractor:
 
                 for key, value in body_vars.items():
                     assign_variable(key, value)
+
+            elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                logger.debug(
+                    f"Entering scope: {type(node).__name__} {getattr(node, 'name', '')}"
+                )
+                inner_tree = ast.Module(body=node.body, type_ignores=[])
+                inner_vars = PysparkTablesExtractor._extract_variables(
+                    inner_tree, code, variables.copy()
+                )
+
+                for key, val in inner_vars.items():
+                    assign_variable(key, val)
 
         return variables
 
