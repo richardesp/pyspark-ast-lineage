@@ -421,6 +421,7 @@ class PysparkTablesExtractor:
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 process_assign(node)
+
             elif isinstance(node, ast.If):
                 body_tree = ast.Module(body=node.body, type_ignores=[])
                 orelse_tree = ast.Module(body=node.orelse, type_ignores=[])
@@ -435,6 +436,34 @@ class PysparkTablesExtractor:
                     assign_variable(
                         key, body_vars.get(key, set()) | orelse_vars.get(key, set())
                     )
+
+            elif isinstance(node, ast.For):
+                iter_node = node.iter
+                target_variable = node.target.id
+
+                logger.debug(
+                    f"Inside For loop (mapping variables with their constant values, {target_variable})"
+                )
+
+                if isinstance(iter_node, ast.List):
+                    # Direct list: for x in ["a", "b"]
+                    values = [
+                        elt.s for elt in iter_node.elts if isinstance(elt, ast.Constant)
+                    ]
+                    logger.debug(f"{node.target.id} can take values: {values}")
+
+                elif isinstance(iter_node, ast.Name):
+                    # Looping over a known variable
+                    values = variables.get(iter_node.id, [])
+                    logger.debug(
+                        f"{node.target.id} can take values from {iter_node.id}: {values}"
+                    )
+
+                values = ast.literal_eval(next(iter(values), None))
+                logger.debug(f"Literal evaluation for the possible values: {values}")
+
+                for value in values:
+                    assign_variable(target_variable, value)
 
         return variables
 
