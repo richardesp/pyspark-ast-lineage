@@ -565,6 +565,17 @@ class PysparkTablesExtractor:
                     )
                     assign_variable(key, combined_values)
 
+            elif isinstance(node, ast.With):
+                logger.debug("Processing With block")
+
+                body_tree = ast.Module(body=node.body, type_ignores=[])
+                body_vars = PysparkTablesExtractor._extract_variables(
+                    body_tree, code, variables.copy()
+                )
+
+                for key, value in body_vars.items():
+                    assign_variable(key, value)
+
         return variables
 
     @staticmethod
