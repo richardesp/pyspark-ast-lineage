@@ -301,7 +301,7 @@ x = "outside"
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert variables == {"x": {"outside"}}
+    assert variables == {"x": {"inside", "outside"}}
 
 
 def test_for_loop_over_range():
@@ -375,7 +375,7 @@ table = "outside"
 """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert variables == {"table": {"outside"}}
+    assert variables == {"table": {"inside", "outside"}}
 
 
 def test_ternary_in_loop():
@@ -442,3 +442,56 @@ table = get_table()
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert "table" in variables  # Cannot resolve, but shouldn't error
+
+
+def test_undeclared_variable_resolves_to_none():
+    code = """
+table_name = some_undefined_var
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table_name": {None}}
+
+
+def test_explicit_none_assignment():
+    code = """
+table_name = None
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table_name": {None}}
+
+
+def test_partial_resolution_with_undeclared():
+    code = """
+prefix = "sales"
+table_name = prefix + "_" + unknown
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table_name"] == {None}
+
+
+def test_self_attribute_assignment():
+    code = """
+class Manager:
+    def __init__(self):
+        self.table_name = "sales"
+
+    def read(self):
+        table = self.table_name
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"self.table_name": {"sales"}, "table": {"sales"}}
+
+
+def test_function_local_variable_usage():
+    code = """
+def get_table():
+    table = "sales"
+    return table
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"sales"}}
