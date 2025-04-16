@@ -195,7 +195,7 @@ class PysparkTablesExtractor:
             return None
 
     @staticmethod
-    def _extract_variables(tree, code):
+    def _extract_variables(tree, code, variables=None):
         """
         Extracts all *possible* variable assignments (including across branches)
         and evaluates their values using AST.
@@ -207,7 +207,9 @@ class PysparkTablesExtractor:
         Returns:
             dict[str, set]: Variable names mapped to a set of possible values.
         """
-        variables = {}
+
+        # We need to save the context when recursively we need to process the rest of the node.body
+        variables = {} if not variables else variables
         code = textwrap.dedent(str(code))
 
         def custom_literal_eval(expr_node, variables):
@@ -224,6 +226,17 @@ class PysparkTablesExtractor:
 
             logger.debug(f"expr_node type: {type(expr_node)}")
             logger.debug(f"Current variables lookup: {variables}")
+
+            if isinstance(expr_node, ast.Name):
+                var_name = expr_node.id
+                if var_name in variables:
+                    values = variables[var_name]
+                    logger.debug(f"Detected expr_node with a ast.Name type: {values}")
+
+                    if values:
+                        return values
+
+                return None
 
             # Handle BinOp: string concat, multiplication, percent-formatting
             if isinstance(expr_node, ast.BinOp):
@@ -385,6 +398,23 @@ class PysparkTablesExtractor:
 
                 # Only now evaluate the string safely
                 value_set = {str(custom_literal_eval(replaced_expr, variables))}
+                logger.debug(f"Retrieved value_set: {value_set}")
+
+                # Cleaning pre-processed sets value
+                try:
+                    for value in value_set:
+                        if type(ast.literal_eval(value)) is set:
+                            for sub_value in ast.literal_eval(value):
+                                value_set.update(sub_value)
+
+                            value_set.discard(value)
+
+                        elif ast.literal_eval(value) is None:
+                            value_set.discard(value)
+                            value_set.add(None)
+
+                except Exception:
+                    pass
 
             except Exception as e:
                 logger.warning(f"Failed to evaluate {ast.unparse(node)}: {e}")
@@ -439,31 +469,61 @@ class PysparkTablesExtractor:
 
             elif isinstance(node, ast.For):
                 iter_node = node.iter
-                target_variable = node.target.id
 
-                logger.debug(
-                    f"Inside For loop (mapping variables with their constant values, {target_variable})"
-                )
+                def extract_target_names(target):
+                    if isinstance(target, ast.Name):
+                        return [target.id]
+                    elif isinstance(target, ast.Tuple):
+                        return [
+                            elt.id for elt in target.elts if isinstance(elt, ast.Name)
+                        ]
+                    return []
+
+                target_variables = extract_target_names(node.target)
+                logger.debug(f"Inside For loop (target variables: {target_variables})")
+
+                values = set()
 
                 if isinstance(iter_node, ast.List):
-                    # Direct list: for x in ["a", "b"]
-                    values = [
-                        elt.s for elt in iter_node.elts if isinstance(elt, ast.Constant)
-                    ]
-                    logger.debug(f"{node.target.id} can take values: {values}")
+                    # Direct list: for x in [(1, "a"), (2, "b")]
+                    try:
+                        evaluated = ast.literal_eval(iter_node)
+                        values = evaluated if isinstance(evaluated, list) else []
+                    except Exception as e:
+                        logger.debug(f"Failed to literal_eval list: {e}")
 
                 elif isinstance(iter_node, ast.Name):
                     # Looping over a known variable
-                    values = variables.get(iter_node.id, [])
-                    logger.debug(
-                        f"{node.target.id} can take values from {iter_node.id}: {values}"
-                    )
+                    known = variables.get(iter_node.id, set())
+                    try:
+                        literal_value = ast.literal_eval(next(iter(known), "[]"))
+                        values = (
+                            literal_value if isinstance(literal_value, list) else []
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            f"Failed to literal_eval variable {iter_node.id}: {e}"
+                        )
 
-                values = ast.literal_eval(next(iter(values), None))
-                logger.debug(f"Literal evaluation for the possible values: {values}")
+                logger.debug(f"Resolved iterable values: {values}")
 
-                for value in values:
-                    assign_variable(target_variable, value)
+                # Assign values to target variables, one per item
+                for item in values:
+                    if isinstance(item, (list, tuple)) and len(item) == len(
+                        target_variables
+                    ):
+                        for var_name, val in zip(target_variables, item):
+                            assign_variable(var_name, str(val))
+                    elif len(target_variables) == 1:
+                        assign_variable(target_variables[0], str(item))
+
+                # Now extract variables from loop body
+                body_tree = ast.Module(body=node.body, type_ignores=[])
+                body_vars = PysparkTablesExtractor._extract_variables(
+                    body_tree, code, variables.copy()
+                )
+                for key, new_values in body_vars.items():
+                    assign_variable(key, new_values)
 
         return variables
 
