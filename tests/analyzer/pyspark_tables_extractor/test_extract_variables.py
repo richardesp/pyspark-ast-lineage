@@ -255,4 +255,4 @@ for table in table_names:
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert unwrap(variables)["table_names"] == ["sales_q1", "sales_q2"]
+    assert unwrap(variables)["table"] == {"sales_q1", "sales_q2"}
