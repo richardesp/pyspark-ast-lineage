@@ -247,4 +247,96 @@ for table in table_names:
     assert variables == {
         "table_names": {"['sales_q1', 'sales_q2']"},
         "table": {"sales_q1", "sales_q2"},
+        "df": {None},
     }
+
+
+def test_for_loop_tuple_unpacking():
+    code = 'pairs = [(1, "a"), (2, "b")]\nfor x, y in pairs:\n    val = y'
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {
+        "pairs": {"[(1, 'a'), (2, 'b')]"},
+        "x": {"1", "2"},
+        "y": {"a", "b"},
+        "val": {"a", "b"},
+    }
+
+
+def test_ternary_expression():
+    code = 'env = "prod"\ntable = "prod_table" if env == "prod" else "dev_table"'
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {
+        "env": {"prod"},
+        "table": {"prod_table", "dev_table"},
+    }
+
+
+def test_try_except_assignment():
+    code = """
+try:
+    table = "main"
+except:
+    table = "fallback"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"main", "fallback"}}
+
+
+def test_dict_comprehension_assignment():
+    code = "a = {str(i): i for i in range(2)}"
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    # Can't resolve actual values without evaluating code
+    assert "a" in variables
+
+
+def test_function_scope_isolated():
+    code = """
+def my_func():
+    x = "inside"
+x = "outside"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"x": {"outside"}}
+
+
+def test_for_loop_over_range():
+    code = """
+for i in range(2):
+    val = "table_" + str(i)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "val" in variables
+    # Optionally: {"table_0", "table_1"} if you support limited constant range unrolling
+
+
+def test_if_else_assignments():
+    code = """
+if True:
+    table = "a"
+else:
+    table = "b"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"a", "b"}}
+
+
+def test_list_comprehension_variable_leak():
+    code = '[x for x in range(3)]\nfinal = "done"'
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "x" not in variables
+    assert variables == {"final": {"done"}}
+
+
+def test_dynamic_assignment_should_ignore():
+    code = 'setattr(obj, "table", "dynamic")'
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {}
