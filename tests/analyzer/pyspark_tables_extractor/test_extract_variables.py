@@ -340,3 +340,105 @@ def test_dynamic_assignment_should_ignore():
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert variables == {}
+
+
+def test_nested_if_blocks():
+    code = """
+if True:
+    if False:
+        table = "a"
+    else:
+        table = "b"
+else:
+    table = "c"
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"a", "b", "c"}}
+
+
+def test_with_statement_assignment():
+    code = """
+with open("some_file") as f:
+    table = "inside"
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"inside"}}
+
+
+def test_function_scope_is_ignored():
+    code = """
+def my_func():
+    table = "inside"
+table = "outside"
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables == {"table": {"outside"}}
+
+
+def test_ternary_in_loop():
+    code = """
+flags = [True, False]
+for flag in flags:
+    table = "main" if flag else "fallback"
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"main", "fallback"}
+
+
+def test_dict_access_with_indirection():
+    code = """
+paths = {"main": "s3://bucket/main", "backup": "s3://bucket/backup"}
+key = "main"
+path = paths[key]
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["path"] == {"s3://bucket/main"}
+
+
+def test_list_comprehension_result():
+    code = """
+tables = ["a", "b", "c"]
+prefixed = ["tbl_" + t for t in tables]
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "prefixed" in variables  # Even if we can't resolve, it should be safe
+
+
+def test_dict_get_method():
+    code = """
+tables = {"a": "t1", "b": "t2"}
+table = tables.get("a", "default")
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"t1"}
+
+
+def test_deep_loop_unpacking():
+    code = """
+rows = [[("a", 1), ("b", 2)]]
+for group in rows:
+    for name, id in group:
+        label = name
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["label"] == {"a", "b"}
+
+
+def test_method_call_assignment():
+    code = """
+def get_table():
+    return "dynamic"
+
+table = get_table()
+"""
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "table" in variables  # Cannot resolve, but shouldn't error
