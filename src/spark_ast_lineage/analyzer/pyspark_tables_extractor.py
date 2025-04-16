@@ -227,6 +227,17 @@ class PysparkTablesExtractor:
             logger.debug(f"expr_node type: {type(expr_node)}")
             logger.debug(f"Current variables lookup: {variables}")
 
+            if isinstance(expr_node, ast.IfExp):
+
+                test = custom_literal_eval(expr_node.test, variables)
+                body = custom_literal_eval(expr_node.body, variables)
+                orelse = custom_literal_eval(expr_node.orelse, variables)
+
+                logger.debug(f"Inside ifelse one line expression: {test, body, orelse}")
+                logger.debug(f"Returning: {set((body, orelse))}")
+
+                return {body, orelse}  # set of both possible values
+
             if isinstance(expr_node, ast.Name):
                 var_name = expr_node.id
                 if var_name in variables:
@@ -405,7 +416,7 @@ class PysparkTablesExtractor:
                     for value in value_set:
                         if type(ast.literal_eval(value)) is set:
                             for sub_value in ast.literal_eval(value):
-                                value_set.update(sub_value)
+                                value_set.add(sub_value)
 
                             value_set.discard(value)
 
