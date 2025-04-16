@@ -536,6 +536,35 @@ class PysparkTablesExtractor:
                 for key, new_values in body_vars.items():
                     assign_variable(key, new_values)
 
+            elif isinstance(node, ast.Try):
+                logger.debug("Processing Try/Except block")
+
+                # Extract from try body
+                try_body_tree = ast.Module(body=node.body, type_ignores=[])
+                try_vars = PysparkTablesExtractor._extract_variables(
+                    try_body_tree, code, variables.copy()
+                )
+
+                # Extract from each except handler
+                except_vars = {}
+                for handler in node.handlers:
+                    handler_tree = ast.Module(body=handler.body, type_ignores=[])
+                    handler_vars = PysparkTablesExtractor._extract_variables(
+                        handler_tree, code, variables.copy()
+                    )
+                    for key, value_set in handler_vars.items():
+                        if key not in except_vars:
+                            except_vars[key] = set()
+                        except_vars[key].update(value_set)
+
+                # Merge try and except variable sets
+                all_keys = set(try_vars) | set(except_vars)
+                for key in all_keys:
+                    combined_values = try_vars.get(key, set()) | except_vars.get(
+                        key, set()
+                    )
+                    assign_variable(key, combined_values)
+
         return variables
 
     @staticmethod
