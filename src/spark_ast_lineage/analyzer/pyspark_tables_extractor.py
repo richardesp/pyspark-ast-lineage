@@ -345,8 +345,8 @@ class PysparkTablesExtractor:
 
                 if attr == "get":
                     logger.debug("Handling dict.get() method")
-
                     dict_obj = custom_literal_eval(expr_node.func.value, variables)
+
                     if isinstance(dict_obj, dict) and len(expr_node.args) >= 1:
                         key = custom_literal_eval(expr_node.args[0], variables)
                         default = (
@@ -354,38 +354,54 @@ class PysparkTablesExtractor:
                             if len(expr_node.args) > 1
                             else None
                         )
-                        return dict_obj.get(key, default)
 
-                if attr == "format":
-                    logger.debug("Invoke for format() method detected")
-                    logger.debug(
-                        f"format() called on: {ast.unparse(expr_node.func.value)}, "
-                        f"args: {[ast.unparse(arg) for arg in expr_node.args]}"
-                    )
-                    try:
-                        fmt = ast.literal_eval(expr_node.func.value)
-                        args = [str(ast.literal_eval(arg)) for arg in expr_node.args]
-                        return fmt.format(*args)
-                    except Exception as e:
-                        logger.warning(f"format() evaluation failed: {e}")
-                        return None
+                        result = dict_obj.get(key, default)
+                        logger.debug(
+                            f"dict.get() result: {result} (key={key}, default={default})"
+                        )
+                        return result
+                    else:
+                        logger.debug("Skipped dict.get(): Not a dict or missing args")
+
+                elif attr == "format":
+                    logger.debug("Handling str.format() method")
+
+                    base = custom_literal_eval(expr_node.func.value, variables)
+                    if isinstance(base, str):
+                        try:
+                            args = [
+                                custom_literal_eval(arg, variables)
+                                for arg in expr_node.args
+                            ]
+                            if None not in args:
+                                result = base.format(*args)
+                                logger.debug(f"format() result: {result}")
+                                return result
+                        except Exception as e:
+                            logger.warning(f"format() evaluation failed: {e}")
+                    else:
+                        logger.debug("Skipped format(): Base is not a string")
 
                 elif attr == "join":
-                    logger.debug("Invoke for join() method detected")
-                    logger.debug(
-                        f"join() called on: {ast.unparse(expr_node.func.value)}, "
-                        f"arg: {ast.unparse(expr_node.args[0])}"
-                    )
-                    try:
-                        separator = ast.literal_eval(expr_node.func.value)
-                        iterable = ast.literal_eval(expr_node.args[0])
-                        if isinstance(separator, str) and all(
+                    logger.debug("Handling str.join() method")
+
+                    separator = custom_literal_eval(expr_node.func.value, variables)
+                    if isinstance(separator, str) and expr_node.args:
+                        iterable = custom_literal_eval(expr_node.args[0], variables)
+                        if isinstance(iterable, list) and all(
                             isinstance(x, str) for x in iterable
                         ):
-                            return separator.join(iterable)
-                    except Exception as e:
-                        logger.warning(f"join() evaluation failed: {e}")
-                        return None
+                            result = separator.join(iterable)
+                            logger.debug(f"join() result: {result}")
+                            return result
+                        else:
+                            logger.debug(
+                                "Skipped join(): Iterable is not list of strings"
+                            )
+                    else:
+                        logger.debug(
+                            "Skipped join(): Separator is not a string or missing args"
+                        )
 
             return None  # fallback
 
