@@ -337,11 +337,24 @@ class PysparkTablesExtractor:
                     logger.warning(f"Subscript access failed: {e}")
                     return None
 
-            # Handle .format() and .join()
+            # Handle .format(), .join() and .get()
             if isinstance(expr_node, ast.Call) and isinstance(
                 expr_node.func, ast.Attribute
             ):
                 attr = expr_node.func.attr
+
+                if attr == "get":
+                    logger.debug("Handling dict.get() method")
+
+                    dict_obj = custom_literal_eval(expr_node.func.value, variables)
+                    if isinstance(dict_obj, dict) and len(expr_node.args) >= 1:
+                        key = custom_literal_eval(expr_node.args[0], variables)
+                        default = (
+                            custom_literal_eval(expr_node.args[1], variables)
+                            if len(expr_node.args) > 1
+                            else None
+                        )
+                        return dict_obj.get(key, default)
 
                 if attr == "format":
                     logger.debug("Invoke for format() method detected")
