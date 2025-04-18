@@ -476,6 +476,34 @@ class PysparkTablesExtractor:
                 value_set = {str(custom_literal_eval(replaced_expr, variables))}
                 logger.debug(f"Retrieved value_set: {value_set}")
 
+                # If assigning an instance like cfg = Config()
+                if isinstance(replaced_expr, ast.Call) and isinstance(
+                    replaced_expr.func, ast.Name
+                ):
+                    if isinstance(node.targets[0], ast.Name):
+                        instance_name = node.targets[0].id
+
+                        # Step 1: Build a dict of self attributes
+                        self_attrs = {
+                            k: list(v)[0]
+                            for k, v in variables.items()
+                            if k.startswith("self.") and len(v) == 1
+                        }
+
+                        # Step 2: Convert to instance attributes (cfg.env = prod)
+                        for self_attr, val in self_attrs.items():
+                            attr = self_attr.split("self.", 1)[1]
+                            instance_attr = f"{instance_name}.{attr}"
+                            assign_variable(instance_attr, val)
+
+                        # Step 3: Optionally store instance as dict
+                        instance_dict_repr = (
+                            "{"
+                            + ", ".join(f"{k}: {v}" for k, v in self_attrs.items())
+                            + "}"
+                        )
+                        assign_variable(instance_name, instance_dict_repr)
+
                 # Cleaning pre-processed sets value
                 try:
                     for value in value_set:
