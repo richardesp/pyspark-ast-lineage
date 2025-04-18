@@ -482,19 +482,82 @@ class PysparkTablesExtractor:
                 ):
                     if isinstance(node.targets[0], ast.Name):
                         instance_name = node.targets[0].id
+                        class_name = replaced_expr.func.id
 
-                        # Step 1: Build a dict of self attributes
+                        # Step 1: Handle constructor arguments
+                        tree_body = tree.body if isinstance(tree, ast.Module) else []
+                        for class_node in tree_body:
+                            if (
+                                isinstance(class_node, ast.ClassDef)
+                                and class_node.name == class_name
+                            ):
+                                for item in class_node.body:
+                                    if (
+                                        isinstance(item, ast.FunctionDef)
+                                        and item.name == "__init__"
+                                    ):
+                                        param_names = [
+                                            arg.arg for arg in item.args.args
+                                        ][
+                                            1:
+                                        ]  # skip 'self'
+                                        arg_map = {}
+
+                                        # Handle positional arguments
+                                        for name, arg in zip(
+                                            param_names, replaced_expr.args
+                                        ):
+                                            value = custom_literal_eval(arg, variables)
+                                            arg_map[name] = value
+
+                                        # Handle keyword arguments
+                                        for kw in replaced_expr.keywords:
+                                            if kw.arg is not None:  # skip **kwargs
+                                                value = custom_literal_eval(
+                                                    kw.value, variables
+                                                )
+                                                arg_map[kw.arg] = value
+
+                                        for stmt in item.body:
+                                            if isinstance(stmt, ast.Assign):
+                                                for target in stmt.targets:
+                                                    if isinstance(
+                                                        target, ast.Attribute
+                                                    ):
+                                                        full_attr = PysparkTablesExtractor._get_attribute_name(
+                                                            target
+                                                        )
+                                                        if (
+                                                            full_attr.startswith(
+                                                                "self."
+                                                            )
+                                                            and isinstance(
+                                                                stmt.value, ast.Name
+                                                            )
+                                                            and stmt.value.id in arg_map
+                                                        ):
+                                                            instance_attr = f"{instance_name}.{full_attr[5:]}"
+                                                            value = arg_map[
+                                                                stmt.value.id
+                                                            ]
+                                                            assign_variable(
+                                                                full_attr, {value}
+                                                            )
+                                                            assign_variable(
+                                                                instance_attr, {value}
+                                                            )
+
+                        # Step 2: Copy remaining self.* attributes to instance
                         self_attrs = {
                             k: list(v)[0]
                             for k, v in variables.items()
                             if k.startswith("self.") and len(v) == 1
                         }
 
-                        # Step 2: Convert to instance attributes (cfg.env = prod)
                         for self_attr, val in self_attrs.items():
                             attr = self_attr.split("self.", 1)[1]
                             instance_attr = f"{instance_name}.{attr}"
-                            assign_variable(instance_attr, val)
+                            assign_variable(instance_attr, {val})
 
                         # Step 3: Optionally store instance as dict
                         instance_dict_repr = (
@@ -502,7 +565,7 @@ class PysparkTablesExtractor:
                             + ", ".join(f"{k}: {v}" for k, v in self_attrs.items())
                             + "}"
                         )
-                        assign_variable(instance_name, instance_dict_repr)
+                        assign_variable(instance_name, {instance_dict_repr})
 
                 # Cleaning pre-processed sets value
                 try:
