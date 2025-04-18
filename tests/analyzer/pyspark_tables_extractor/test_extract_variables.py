@@ -495,3 +495,86 @@ def get_table():
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert variables == {"table": {"sales"}}
+
+
+def test_chained_string_operations():
+    code = """
+prefix = "data"
+suffix = "2025"
+table = prefix.upper() + "_" + suffix.lower()
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"DATA_2025"}
+
+
+def test_nested_attribute_resolution():
+    code = """
+class Config:
+    def __init__(self):
+        self.env = "prod"
+
+cfg = Config()
+environment = cfg.env
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "cfg.env" in variables
+    assert variables["environment"] == {"prod"}
+
+
+def test_ternary_with_function_call():
+    code = """
+def get_env():
+    return "dev"
+
+env = get_env()
+table = "dev_table" if env == "dev" else "prod_table"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "env" in variables
+    assert variables["table"] == {"dev_table", "prod_table"}
+
+
+def test_complex_f_string():
+    code = """
+prefix = "sales"
+region = "us"
+year = 2025
+table = f"{prefix}_{region}_{year}"
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"sales_us_2025"}
+
+
+def test_nested_dict_in_list():
+    code = """
+configs = [{"table": "t1"}, {"table": "t2"}]
+names = [conf["table"] for conf in configs]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "names" in variables
+    assert variables["names"] == {"t1", "t2"}
+
+
+def test_mixed_type_concatenation():
+    code = """
+year = 2025
+table = "sales_" + str(year)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"sales_2025"}
+
+
+def test_assignment_in_if_expression():
+    code = """
+if (table := "sales_2025"):
+    print(table)
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"sales_2025"}
