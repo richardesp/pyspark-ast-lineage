@@ -259,6 +259,32 @@ class PysparkTablesExtractor:
 
                 return None
 
+            # Handle string methods on constants or variables
+            if isinstance(expr_node, ast.Call) and isinstance(
+                expr_node.func, ast.Attribute
+            ):
+                attr = expr_node.func.attr
+                base_expr = expr_node.func.value
+                base_val = custom_literal_eval(base_expr, variables)
+
+                if base_val is not None:
+                    base_str = str(base_val)
+                    logger.debug(f"Evaluating string method: {base_str}.{attr}()")
+                    try:
+                        if attr == "upper":
+                            return base_str.upper()
+                        elif attr == "lower":
+                            return base_str.lower()
+                        elif attr == "strip":
+                            return base_str.strip()
+                        elif attr == "capitalize":
+                            return base_str.capitalize()
+                        elif attr == "title":
+                            return base_str.title()
+                    except Exception as e:
+                        logger.warning(f"String method call failed: {e}")
+                        return None
+
             # Handle BinOp: string concat, multiplication, percent-formatting
             if isinstance(expr_node, ast.BinOp):
                 left = custom_literal_eval(expr_node.left, variables)
