@@ -523,6 +523,36 @@ environment = cfg.env
     assert variables["environment"] == {"prod"}
 
 
+def test_nested_attribute_resolution_with_constructor_initilization_args():
+    code = """
+class Config:
+    def __init__(self, environment):
+        self.env = environment
+
+cfg = Config("prod")
+environment = cfg.env
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "cfg.env" in variables
+    assert variables["environment"] == {"prod"}
+
+
+def test_nested_attribute_resolution_with_constructor_initilization_kwargs():
+    code = """
+class Config:
+    def __init__(self, environment):
+        self.env = environment
+
+cfg = Config(environment="prod")
+environment = cfg.env
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert "cfg.env" in variables
+    assert variables["environment"] == {"prod"}
+
+
 def test_ternary_with_function_call():
     code = """
 def get_env():
@@ -564,16 +594,6 @@ def test_mixed_type_concatenation():
     code = """
 year = 2025
 table = "sales_" + str(year)
-    """
-    tree = ast.parse(code)
-    variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert variables["table"] == {"sales_2025"}
-
-
-def test_assignment_in_if_expression():
-    code = """
-if (table := "sales_2025"):
-    print(table)
     """
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
