@@ -201,3 +201,77 @@ df = spark.read.table(table_name)
     """
     tables = PysparkTablesExtractor.extract_tables_from_code(code)
     assert tables == {"backup_data", "live_data"}
+
+
+def test_spark_read_table_with_dict_get():
+    code = """
+tables = {"main": "products", "alt": "products_backup"}
+df = spark.read.table(tables.get("main"))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"products"}
+
+
+def test_spark_read_table_with_dict_get_default():
+    code = """
+tables = {"main": "products"}
+df = spark.read.table(tables.get("alt", "products_default"))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"products_default"}
+
+
+def test_spark_read_table_with_lowercase():
+    code = """
+raw_table = "SALES_DATA"
+table_name = raw_table.lower()
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"sales_data"}
+
+
+def test_spark_read_table_format_variable_chain():
+    code = """
+table_template = "{}_{}"
+year = "2024"
+table_name = table_template.format("customers", year)
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"customers_2024"}
+
+
+def test_spark_read_table_with_list_slice():
+    code = """
+tables = ["sales_q1", "sales_q2", "sales_q3"]
+table_name = tables[:2][0]
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"sales_q1"}
+
+
+def test_spark_read_table_with_object_attr_chain():
+    code = """
+class Config:
+    def __init__(self):
+        self.table = "events"
+
+cfg = Config()
+df = spark.read.table(cfg.table)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"events"}
+
+
+def test_spark_read_table_multiline_complex():
+    code = """
+table_name = (
+    "products"
+    + "_2024"
+)
+df = spark.read.table(table_name)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"products_2024"}
