@@ -1,70 +1,50 @@
+from spark_ast_lineage.analyzer.safe_evaluator import SafeEvaluator
 import ast
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TableExtractor:
-    """Extractor for `spark.read.table("table_name")` calls"""
+    """Extractor for `spark.read.table("table_name")` calls."""
 
-    def extract(self, node, variables=None):
+    def extract(self, node: ast.Call, variables: dict[str, set]) -> set[str]:
         """
         Extracts table names from `spark.read.table("table_name")` calls.
 
         Args:
             node (ast.Call): The AST node representing a function call.
-            variables (dict, optional): Dictionary of variable values extracted.
+            variables (dict): Dictionary of pre-extracted variable values.
 
         Returns:
-            set: A set of extracted table names.
+            set[str]: A set of extracted table names (usually just one).
         """
-        if variables is None:
-            variables = {}
+        tables = set()
 
-        # Case 1: Direct string constant (spark.read.table("table_name"))
-        if isinstance(node.args[0], ast.Constant):
-            return {node.args[0].value}
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            return tables
 
-        # Case 2: Variable assignment (spark.read.table(table_name))
-        if isinstance(node.args[0], ast.Name):
-            table_name = variables.get(
-                node.args[0].id
-            )  # Get value from extracted variables
-            return {table_name} if table_name else set()
+        if node.func.attr != "table":
+            return tables
 
-        # Case 3: String concatenation (spark.read.table(table_prefix + table_suffix))
-        if isinstance(node.args[0], ast.BinOp) and isinstance(node.args[0].op, ast.Add):
-            return {self._evaluate_binop(node.args[0], variables)}
+        if not node.args:
+            logger.debug("No arguments found in .table() call")
+            return tables
 
-        # Case 4: f-strings (spark.read.table(f"{table_base}_{table_suffix}"))
-        if isinstance(node.args[0], ast.JoinedStr):
-            return {self._evaluate_fstring(node.args[0], variables)}
+        table_arg = node.args[0]
 
-        return set()
+        logger.debug(f"Attempting to evaluate table argument: {ast.dump(table_arg)}")
+        evaluated = SafeEvaluator.evaluate(table_arg, variables)
 
-    def _evaluate_binop(self, node, variables):
-        """Recursively evaluate string concatenations"""
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = self._evaluate_binop(node.left, variables)
-            right = self._evaluate_binop(node.right, variables)
-            return (left or "") + (right or "")
+        if evaluated is None:
+            logger.debug("Failed to resolve table name statically.")
+            return tables
 
-        if isinstance(node, ast.Name):  # Variable reference
-            return variables.get(node.id, "")
+        if isinstance(evaluated, str):
+            tables.add(evaluated)
+        elif isinstance(evaluated, set):
+            tables.update(str(val) for val in evaluated if isinstance(val, str))
+        else:
+            logger.debug(f"Unexpected evaluation result type: {type(evaluated)}")
 
-        if isinstance(node, ast.Constant):  # Direct string
-            return node.value
-
-        return ""
-
-    def _evaluate_fstring(self, node, variables):
-        """Evaluate f-strings to extract table names"""
-        result = []
-        for part in node.values:
-            if isinstance(part, ast.Constant):  # Regular string part
-                result.append(part.value)
-            elif isinstance(part, ast.FormattedValue) and isinstance(
-                part.value, ast.Name
-            ):
-                var_name = part.value.id
-                result.append(
-                    str(variables.get(var_name, ""))
-                )  # Convert variable value to string
-        return "".join(result)
+        return tables
