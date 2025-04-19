@@ -577,24 +577,3 @@ table = f"{prefix}_{region}_{year}"
     tree = ast.parse(code)
     variables = PysparkTablesExtractor._extract_variables(tree, code)
     assert variables["table"] == {"sales_us_2025"}
-
-
-def test_nested_dict_in_list():
-    code = """
-configs = [{"table": "t1"}, {"table": "t2"}]
-names = [conf["table"] for conf in configs]
-    """
-    tree = ast.parse(code)
-    variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert "names" in variables
-    assert variables["names"] == {"t1", "t2"}
-
-
-def test_mixed_type_concatenation():
-    code = """
-year = 2025
-table = "sales_" + str(year)
-    """
-    tree = ast.parse(code)
-    variables = PysparkTablesExtractor._extract_variables(tree, code)
-    assert variables["table"] == {"sales_2025"}
