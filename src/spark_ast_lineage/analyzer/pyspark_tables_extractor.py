@@ -29,6 +29,7 @@ class PysparkTablesExtractor:
 
         # Step 1: Extract all variables first
         variables = PysparkTablesExtractor._extract_variables(tree, code)
+        logger.debug(f"Variables extracted from source code: {variables}")
 
         # Step 2: Process each AST node
         for node in ast.walk(tree):
