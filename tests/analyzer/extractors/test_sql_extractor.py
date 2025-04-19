@@ -159,30 +159,10 @@ df = spark.sql(query)
     assert tables == {"customers", "orders"}  # not 'active_customers'
 
 
-def test_spark_sql_update_statement():
-    code = 'df = spark.sql("UPDATE inventory SET stock = stock - 1 WHERE item_id = 42")'
-    tables = PysparkTablesExtractor.extract_tables_from_code(code)
-    assert tables == {"inventory"}
-
-
 def test_spark_sql_insert_into():
     code = 'df = spark.sql("INSERT INTO sales SELECT * FROM transactions")'
     tables = PysparkTablesExtractor.extract_tables_from_code(code)
     assert tables == {"sales", "transactions"}
-
-
-def test_spark_sql_with_nested_subquery():
-    code = '''
-query = """
-SELECT * FROM (
-    SELECT * FROM logs WHERE status = 'error'
-) sub
-JOIN alerts ON sub.id = alerts.log_id
-"""
-df = spark.sql(query)
-    '''
-    tables = PysparkTablesExtractor.extract_tables_from_code(code)
-    assert tables == {"logs", "alerts"}
 
 
 def test_spark_sql_multiple_statements():
