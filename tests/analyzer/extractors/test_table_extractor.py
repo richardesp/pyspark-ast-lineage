@@ -1,6 +1,4 @@
-from spark_ast_lineage.analyzer.pyspark_tables_extractor import (
-    PysparkTablesExtractor,
-)
+from spark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
 
 
 def test_spark_read_table():
