@@ -209,6 +209,16 @@ table_name = tables["sales"]["q1"]
     }
 
 
+def test_df_write_csv_nested_dict():
+    code = """
+paths = {"2024": {"csv": "/exports/2024/csv"}}
+table = paths["2024"]["csv"]
+    """
+    tree = ast.parse(code)
+    variables = PysparkTablesExtractor._extract_variables(tree, code)
+    assert variables["table"] == {"/exports/2024/csv"}
+
+
 def test_list_indexing():
     code = """
 table_names = ["customers", "orders"]
