@@ -1,11 +1,15 @@
-from spark_ast_lineage.analyzer.safe_evaluator import SafeEvaluator
 import ast
 import logging
+
+from spark_ast_lineage.analyzer.safe_evaluator import SafeEvaluator
+from spark_ast_lineage.analyzer.extractors.registry import register_extractor
+from spark_ast_lineage.analyzer.extractors.base import BaseExtractor
 
 logger = logging.getLogger(__name__)
 
 
-class TableExtractor:
+@register_extractor("table")
+class TableExtractor(BaseExtractor):
     """Extractor for `spark.read.table("table_name")` calls."""
 
     def extract(self, node: ast.Call, variables: dict[str, set]) -> set[str]:
