@@ -104,6 +104,8 @@ class SafeEvaluator:
         Returns:
             Any or None: The variable's value(s) or None.
         """
+        logger.debug(f"Inside eval_name at the node: {ast.dump(node)}")
+
         if isinstance(node, ast.Name):
             var_name = node.id
 
@@ -114,16 +116,17 @@ class SafeEvaluator:
                 for val in values:
                     if isinstance(val, str):
                         try:
-                            if (
-                                val.startswith("{")
-                                or val.startswith("[")
-                                or val.startswith("(")
-                            ):
-                                evaluated = ast.literal_eval(val)
+                            logger.debug(f"Trying to evaluate: {val}")
+                            parsed = ast.literal_eval(val)
+                            logger.debug(f"Parsed value: {node}")
+                            # Only allow parsing if the result is a container, not a primitive
+                            if isinstance(parsed, (dict, list, tuple)):
+                                evaluated = parsed
                             else:
-                                evaluated = val
+                                evaluated = val  # Keep original string form to avoid numeric interpretation
                         except Exception:
                             evaluated = val
+
                     else:
                         evaluated = val
 
@@ -248,26 +251,31 @@ class SafeEvaluator:
         Returns:
             str or None: The resulting string or None.
         """
-        if isinstance(node, ast.JoinedStr):
-            parts = []
+        if not isinstance(node, ast.JoinedStr):
+            return None
 
-            for val in node.values:
-                if isinstance(val, ast.FormattedValue):
-                    subval = SafeEvaluator.evaluate(val.value, variables)
+        parts = []
 
-                    if isinstance(subval, set) and len(subval) == 1:
-                        subval = next(iter(subval))
+        for val in node.values:
+            if isinstance(val, ast.FormattedValue):
+                subval = SafeEvaluator.evaluate(val.value, variables)
 
-                    if subval is None:
-                        return None
+                # Extract safely from sets
+                if isinstance(subval, set) and len(subval) == 1:
+                    subval = next(iter(subval))
 
+                # Ensure it's a string if it was originally quoted
+                if isinstance(subval, str):
+                    parts.append(subval)
+                elif subval is not None:
                     parts.append(str(subval))
+                else:
+                    return None
 
-                elif isinstance(val, ast.Constant):
-                    parts.append(str(val.value))
+            elif isinstance(val, ast.Constant):
+                parts.append(str(val.value))
 
-            return "".join(parts)
-        return None
+        return "".join(parts)
 
     @staticmethod
     def _eval_subscript(node, variables):
