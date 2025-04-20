@@ -9,6 +9,7 @@ license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "rich>=14.0.0",
     "sqlparse>=0.5.3",
 ]
 
