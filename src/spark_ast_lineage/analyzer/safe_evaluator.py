@@ -357,9 +357,62 @@ class SafeEvaluator:
             attr = node.func.attr
             base = SafeEvaluator.evaluate(node.func.value, variables)
 
-            if attr == "get" and isinstance(base, dict):
+            if attr == "get":
 
-                if len(node.args) >= 1:
+                # Case 1: base is a set of stringified dicts
+                if isinstance(base, set):
+
+                    for item in base:
+                        try:
+                            parsed = ast.literal_eval(item)
+
+                            if isinstance(parsed, dict):
+                                key = SafeEvaluator.evaluate(node.args[0], variables)
+
+                                if isinstance(key, set):
+
+                                    # multiple keys (e.g., ternary)
+                                    results = set()
+
+                                    for k in key:
+                                        val = parsed.get(k)
+                                        if val is not None:
+                                            results.add(val)
+
+                                    return results or None
+
+                                else:
+                                    default = (
+                                        SafeEvaluator.evaluate(node.args[1], variables)
+                                        if len(node.args) > 1
+                                        else None
+                                    )
+                                    return parsed.get(key, default)
+
+                        except Exception as e:
+                            logger.warning(f"Failed parsing string to dict: {e}")
+
+                # Case 2: base is a stringified dict
+                elif isinstance(base, str):
+                    try:
+                        parsed = ast.literal_eval(base)
+
+                        if isinstance(parsed, dict):
+                            key = SafeEvaluator.evaluate(node.args[0], variables)
+                            default = (
+                                SafeEvaluator.evaluate(node.args[1], variables)
+                                if len(node.args) > 1
+                                else None
+                            )
+
+                            return parsed.get(key, default)
+
+                    except Exception as e:
+                        logger.warning(f"Failed parsing base as dict: {e}")
+
+                # Case 3: base is already a dict
+                elif isinstance(base, dict):
+
                     key = SafeEvaluator.evaluate(node.args[0], variables)
                     default = (
                         SafeEvaluator.evaluate(node.args[1], variables)
@@ -369,7 +422,7 @@ class SafeEvaluator:
 
                     return base.get(key, default)
 
-            elif attr == "format" and isinstance(base, str):
+            elif attr == "format":
 
                 try:
                     args = [SafeEvaluator.evaluate(arg, variables) for arg in node.args]
@@ -379,7 +432,7 @@ class SafeEvaluator:
                 except Exception as e:
                     logger.warning(f"format() evaluation failed: {e}")
 
-            elif attr == "join" and isinstance(base, str):
+            elif attr == "join":
                 if node.args:
                     iterable = SafeEvaluator.evaluate(node.args[0], variables)
 
