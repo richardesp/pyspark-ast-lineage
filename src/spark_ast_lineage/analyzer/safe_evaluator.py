@@ -383,10 +383,41 @@ class SafeEvaluator:
                 if node.args:
                     iterable = SafeEvaluator.evaluate(node.args[0], variables)
 
-                    if isinstance(iterable, list) and all(
+                    result = set()
+
+                    if isinstance(iterable, set):
+                        for val in iterable:
+                            try:
+                                parsed = (
+                                    ast.literal_eval(val)
+                                    if isinstance(val, str)
+                                    else val
+                                )
+                                if isinstance(parsed, list) and all(
+                                    isinstance(x, str) for x in parsed
+                                ):
+                                    result.add(base.join(parsed))
+                            except Exception as e:
+                                logger.warning(f"Join evaluation failed: {e}")
+                        return result if result else None
+
+                    elif isinstance(iterable, str):
+                        try:
+                            parsed = ast.literal_eval(iterable)
+                            if isinstance(parsed, list) and all(
+                                isinstance(x, str) for x in parsed
+                            ):
+                                return base.join(parsed)
+                        except Exception as e:
+                            logger.warning(f"Join evaluation failed on str: {e}")
+
+                    elif isinstance(iterable, list) and all(
                         isinstance(x, str) for x in iterable
                     ):
                         return base.join(iterable)
+
+                return None
+
         return None
 
     @staticmethod
