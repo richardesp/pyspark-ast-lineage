@@ -318,3 +318,6 @@ def get_attribute_name(node):
         elif isinstance(node.value, ast.Attribute):  # Nested attributes: self.a.b
             return f"{get_attribute_name(node.value)}.{node.attr}"
     return None
+
+
+__all__ = ["extract_variables"]
