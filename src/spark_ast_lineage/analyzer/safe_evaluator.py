@@ -44,6 +44,7 @@ class SafeEvaluator:
             or SafeEvaluator._eval_name(expr_node, variables)
             or SafeEvaluator._eval_call_string_methods(expr_node, variables)
             or SafeEvaluator._eval_binop(expr_node, variables)
+            or SafeEvaluator._eval_boolop(expr_node, variables)
             or SafeEvaluator._eval_joinedstr(expr_node, variables)
             or SafeEvaluator._eval_subscript(expr_node, variables)
             or SafeEvaluator._eval_call_dict_methods(expr_node, variables)
@@ -172,6 +173,39 @@ class SafeEvaluator:
 
             except Exception as e:
                 logger.warning(f"String method call failed: {e}")
+
+        return None
+
+    @staticmethod
+    def _eval_boolop(node, variables):
+        """
+        Evaluates boolean operations like `or` and `and` between evaluated expressions.
+
+        Args:
+            node (ast.BoolOp): Boolean operation node.
+            variables (dict): Variable context.
+
+        Returns:
+            Any or None: First truthy value for `or`, or final result for `and`.
+        """
+        if not isinstance(node, ast.BoolOp):
+            return None
+
+        if isinstance(node.op, ast.Or):
+            for value in node.values:
+                evaluated = SafeEvaluator.evaluate(value, variables)
+                if evaluated:  # Return first truthy value
+                    return evaluated
+            return evaluated  # Return last one even if falsy
+
+        elif isinstance(node.op, ast.And):
+            result = None
+            for value in node.values:
+                evaluated = SafeEvaluator.evaluate(value, variables)
+                if not evaluated:
+                    return evaluated
+                result = evaluated
+            return result
 
         return None
 
