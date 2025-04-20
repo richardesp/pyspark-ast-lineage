@@ -1,5 +1,5 @@
 import ast
-from spark_ast_lineage.analyzer.variable_tracker import extract_variables
+from spark_ast_lineage.analyzer.utils.variable_tracker import extract_variables
 
 
 def test_simple_assignment():
