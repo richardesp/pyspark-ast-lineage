@@ -129,3 +129,99 @@ df.write.json(cfg.path)
     """
     tables = PysparkTablesExtractor.extract_tables_from_code(code)
     assert tables == {"/data/config_output"}
+
+
+def test_df_write_with_variable_path():
+    code = """
+path = "/data/output"
+df.write.csv(path)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/output"}
+
+
+def test_df_write_with_nested_dict():
+    code = """
+paths = {"2024": {"csv": "/exports/2024/csv"}}
+df.write.csv(paths["2024"]["csv"])
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/exports/2024/csv"}
+
+
+def test_df_write_with_f_string():
+    code = """
+folder = "2024"
+df.write.parquet(f"/data/{folder}/parquet")
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/2024/parquet"}
+
+
+def test_df_write_with_percent_format():
+    code = """
+folder = "2024"
+df.write.json("/data/%s/json" % folder)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/2024/json"}
+
+
+def test_df_write_with_join_method():
+    code = """
+parts = ["2024", "04", "19"]
+df.write.save("/exports/" + "_".join(parts))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/exports/2024_04_19"}
+
+
+def test_df_write_with_dict_get_default():
+    code = """
+paths = {"csv": "/data/fallback"}
+df.write.csv(paths.get("csv", "/data/default"))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/fallback"}
+
+
+def test_df_write_with_dict_get_missing_key():
+    code = """
+paths = {}
+df.write.csv(paths.get("csv", "/data/default"))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/default"}
+
+
+def test_df_write_with_object_attribute_path():
+    code = """
+class Config:
+    def __init__(self):
+        self.output = "/tmp/output"
+
+cfg = Config()
+df.write.save(cfg.output)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/tmp/output"}
+
+
+def test_df_write_with_multiple_concatenation():
+    code = """
+folder = "/data/"
+subfolder = "sales"
+year = "2024"
+df.write.csv(folder + subfolder + "_" + year)
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"/data/sales_2024"}
+
+
+def test_df_write_with_format_call():
+    code = """
+folder = "2024"
+df.write.save("exports_{}.parquet".format(folder))
+    """
+    tables = PysparkTablesExtractor.extract_tables_from_code(code)
+    assert tables == {"exports_2024.parquet"}
