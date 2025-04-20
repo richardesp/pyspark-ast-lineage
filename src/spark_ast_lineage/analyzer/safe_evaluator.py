@@ -109,8 +109,28 @@ class SafeEvaluator:
 
             if var_name in variables:
                 values = variables[var_name]
-                if values:
-                    return values
+
+                resolved = set()
+                for val in values:
+                    if isinstance(val, str):
+                        try:
+                            if (
+                                val.startswith("{")
+                                or val.startswith("[")
+                                or val.startswith("(")
+                            ):
+                                evaluated = ast.literal_eval(val)
+                            else:
+                                evaluated = val
+                        except Exception:
+                            evaluated = val
+                    else:
+                        evaluated = val
+
+                    # Always store string representation (even if it was a dict originally to avoid hashing problems)
+                    resolved.add(str(evaluated))
+
+                return next(iter(resolved)) if len(resolved) == 1 else resolved
 
         return None
 
@@ -155,38 +175,66 @@ class SafeEvaluator:
     @staticmethod
     def _eval_binop(node, variables):
         """
-        Evaluates binary operations like +, *, %, mostly for strings.
+        Safely evaluates binary operations in AST nodes.
+
+        Handles string concatenation, string multiplication, and string formatting
+        using `%`, supporting combinations of constants and variable sets.
 
         Args:
-            node (ast.BinOp): Binary operation node.
-            variables (dict): Variable context.
+            node (ast.BinOp): The binary operation AST node.
+            variables (dict[str, set]): Extracted variable values for evaluation.
 
         Returns:
-            str or None: Result or None if unsupported.
+            set | str | None: The evaluated result as a string, set of strings,
+            or None if evaluation fails.
         """
-        if isinstance(node, ast.BinOp):
-            left = SafeEvaluator.evaluate(node.left, variables)
-            right = SafeEvaluator.evaluate(node.right, variables)
+        if not isinstance(node, ast.BinOp):
+            return None
 
-            if isinstance(node.op, ast.Add):
-                if left is not None and right is not None:
-                    return str(left) + str(right)
+        # Recursively evaluate both sides
+        left = SafeEvaluator.evaluate(node.left, variables)
+        right = SafeEvaluator.evaluate(node.right, variables)
 
-            elif isinstance(node.op, ast.Mult):
-                if isinstance(left, str) and isinstance(right, int):
-                    return left * right
+        # Normalize to sets
+        left_set = left if isinstance(left, set) else {left}
+        right_set = right if isinstance(right, set) else {right}
 
-                elif isinstance(right, str) and isinstance(left, int):
-                    return right * left
+        result = set()
 
-            elif isinstance(node.op, ast.Mod):
-                if isinstance(left, str):
-                    try:
-                        return left % right
+        if isinstance(node.op, ast.Add):
+            if isinstance(left, set) and isinstance(right, set):
+                return {
+                    str(left_val) + str(right_val)
+                    for left_val in left
+                    for right_val in right
+                }
+            elif isinstance(left, set):
+                return {str(left_val) + str(right) for left_val in left}
+            elif isinstance(right, set):
+                return {str(left) + str(right_val) for right_val in right}
+            elif left is not None and right is not None:
+                return str(left) + str(right)
 
-                    except Exception as e:
-                        logger.warning(f"String formatting failed: {e}")
-        return None
+        elif isinstance(node.op, ast.Mult):
+            for left_val in left_set:
+                for right_val in right_set:
+                    if isinstance(left_val, str) and isinstance(right_val, int):
+                        result.add(left_val * right_val)
+                    elif isinstance(right_val, str) and isinstance(left_val, int):
+                        result.add(right_val * left_val)
+
+        elif isinstance(node.op, ast.Mod):
+            for left_val in left_set:
+                for right_val in right_set:
+                    if isinstance(left_val, str):
+                        try:
+                            result.add(left_val % right_val)
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to format string using % operator: {e}"
+                            )
+
+        return result or None
 
     @staticmethod
     def _eval_joinedstr(node, variables):
@@ -206,8 +254,13 @@ class SafeEvaluator:
             for val in node.values:
                 if isinstance(val, ast.FormattedValue):
                     subval = SafeEvaluator.evaluate(val.value, variables)
+
+                    if isinstance(subval, set) and len(subval) == 1:
+                        subval = next(iter(subval))
+
                     if subval is None:
                         return None
+
                     parts.append(str(subval))
 
                 elif isinstance(val, ast.Constant):
@@ -221,6 +274,8 @@ class SafeEvaluator:
         """
         Evaluates subscript/index operations (e.g., x[0], d['key'], lst[:2]).
 
+        Supports subscripting into values stored as stringified dictionaries or lists.
+
         Args:
             node (ast.Subscript): Subscript node.
             variables (dict): Variable context.
@@ -228,44 +283,63 @@ class SafeEvaluator:
         Returns:
             Any or None: Result of indexing or slicing.
         """
-        if isinstance(node, ast.Subscript):
-            container = SafeEvaluator.evaluate(node.value, variables)
-            if container is None:
-                return None
+        if not isinstance(node, ast.Subscript):
+            return None
 
-            slice_node = node.slice
+        container = SafeEvaluator.evaluate(node.value, variables)
+        if container is None:
+            return None
 
-            try:
-                if isinstance(slice_node, ast.Slice):
-                    lower = (
-                        SafeEvaluator.evaluate(slice_node.lower, variables)
-                        if slice_node.lower
-                        else None
-                    )
+        slice_node = node.slice
 
-                    upper = (
-                        SafeEvaluator.evaluate(slice_node.upper, variables)
-                        if slice_node.upper
-                        else None
-                    )
+        try:
+            if isinstance(slice_node, ast.Slice):
+                lower = (
+                    SafeEvaluator.evaluate(slice_node.lower, variables)
+                    if slice_node.lower
+                    else None
+                )
+                upper = (
+                    SafeEvaluator.evaluate(slice_node.upper, variables)
+                    if slice_node.upper
+                    else None
+                )
+                return container[lower:upper]
 
-                    return container[lower:upper]
+            if hasattr(slice_node, "value"):
+                index = SafeEvaluator.evaluate(slice_node.value, variables)
+            elif isinstance(slice_node, ast.Constant):
+                index = slice_node.value
+            else:
+                index = SafeEvaluator.evaluate(slice_node, variables)
 
-                if hasattr(slice_node, "value"):
-                    index = SafeEvaluator.evaluate(slice_node.value, variables)
+            # Handle set of stringified containers
+            if isinstance(container, set):
+                result = set()
+                for value in container:
+                    try:
+                        literal = ast.literal_eval(value)
+                        if isinstance(literal, (dict, list, tuple)):
+                            result.add(literal[index])
+                    except Exception:
+                        continue
+                return result or None
 
-                elif isinstance(slice_node, ast.Constant):
-                    index = slice_node.value
+            # Handle single stringified container
+            if isinstance(container, str):
+                try:
+                    literal = ast.literal_eval(container)
+                    if isinstance(literal, (dict, list, tuple)):
+                        return literal[index]
+                except Exception:
+                    return None
 
-                else:
-                    index = SafeEvaluator.evaluate(slice_node, variables)
+            # Fallback for real containers
+            return container[index]
 
-                return container[index]
-
-            except Exception as e:
-                logger.warning(f"Subscript access failed: {e}")
-
-        return None
+        except Exception as e:
+            logger.warning(f"Subscript access failed: {e}")
+            return None
 
     @staticmethod
     def _eval_call_dict_methods(node, variables):
