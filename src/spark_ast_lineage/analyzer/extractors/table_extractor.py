@@ -1,7 +1,7 @@
 import ast
 import logging
 
-from spark_ast_lineage.analyzer.safe_evaluator import SafeEvaluator
+from spark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
 from spark_ast_lineage.analyzer.extractors.registry import register_extractor
 from spark_ast_lineage.analyzer.extractors.base import BaseExtractor
 
