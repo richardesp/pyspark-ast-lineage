@@ -1,8 +1,8 @@
 import ast
 import logging
 
-from spark_ast_lineage.analyzer.variable_tracker import extract_variables
-from spark_ast_lineage.analyzer.extractor_factory import get_extractor
+from spark_ast_lineage.analyzer.utils.variable_tracker import extract_variables
+from spark_ast_lineage.analyzer.utils.extractor_factory import get_extractor
 
 logger = logging.getLogger(__name__)
 
