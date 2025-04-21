@@ -65,8 +65,7 @@ for table in tables:
 dynamic_path = f"/tmp/processed/{year}/{month}/{region}_summary.parquet"
 df_sql.write.mode("overwrite").parquet(dynamic_path)
 
-# Example of complex conditional logic (ternary expression with method calls)
-output_type = "json" if region == "US" else "parquet"
+output_type = "json"
 output_dir = f"/data/{year}/{month}/{output_type}"
 
 # Write output in the desired format (either JSON or Parquet)
