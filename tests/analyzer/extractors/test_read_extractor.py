@@ -1,4 +1,4 @@
-from spark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
+from pyspark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
 
 
 def test_read_csv_literal_path():

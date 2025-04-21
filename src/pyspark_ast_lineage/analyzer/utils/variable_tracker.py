@@ -2,7 +2,7 @@ import ast
 import textwrap
 import logging
 
-from spark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
+from pyspark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
 
 logger = logging.getLogger(__name__)
 

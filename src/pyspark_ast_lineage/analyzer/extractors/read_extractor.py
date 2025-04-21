@@ -1,9 +1,9 @@
 import ast
 import logging
 
-from spark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
-from spark_ast_lineage.analyzer.extractors.base import BaseExtractor
-from spark_ast_lineage.analyzer.extractors.registry import register_extractor
+from pyspark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
+from pyspark_ast_lineage.analyzer.extractors.base import BaseExtractor
+from pyspark_ast_lineage.analyzer.extractors.registry import register_extractor
 
 logger = logging.getLogger(__name__)
 

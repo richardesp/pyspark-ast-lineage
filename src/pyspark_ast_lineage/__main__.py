@@ -1,5 +1,5 @@
 def main():
-    print("🚀 spark-ast-lineage: Static Spark Lineage Analyzer")
+    print("🚀 pyspark-ast-lineage: Static Spark Lineage Analyzer")
     print("✅ Package is working correctly!")
 
 

@@ -1,7 +1,7 @@
 import ast
 import logging
 
-from spark_ast_lineage.analyzer.utils.evaluators.registry import register_evaluator
+from pyspark_ast_lineage.analyzer.utils.evaluators.registry import register_evaluator
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ import ast
 import logging
 from typing import Any
 
-from spark_ast_lineage.analyzer.utils.evaluators.registry import EVALUATOR_REGISTRY
+from pyspark_ast_lineage.analyzer.utils.evaluators.registry import EVALUATOR_REGISTRY
 
 logger = logging.getLogger(__name__)
 

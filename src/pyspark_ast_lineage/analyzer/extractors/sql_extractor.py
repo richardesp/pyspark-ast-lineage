@@ -5,9 +5,9 @@ import sqlparse
 from sqlparse.sql import IdentifierList, Identifier, TokenList
 from sqlparse.tokens import Keyword
 
-from spark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
-from spark_ast_lineage.analyzer.extractors.registry import register_extractor
-from spark_ast_lineage.analyzer.extractors.base import BaseExtractor
+from pyspark_ast_lineage.analyzer.utils.safe_evaluator import SafeEvaluator
+from pyspark_ast_lineage.analyzer.extractors.registry import register_extractor
+from pyspark_ast_lineage.analyzer.extractors.base import BaseExtractor
 
 
 logger = logging.getLogger(__name__)

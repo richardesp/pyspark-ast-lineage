@@ -1,7 +1,7 @@
 import ast
 import logging
 
-from spark_ast_lineage.analyzer.extractors.registry import EXTRACTOR_REGISTRY
+from pyspark_ast_lineage.analyzer.extractors.registry import EXTRACTOR_REGISTRY
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.progress import Progress
-from spark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
+from pyspark_ast_lineage.analyzer.pyspark_tables_extractor import PysparkTablesExtractor
 
 console = Console()
 

@@ -1,5 +1,5 @@
 [project]
-name = "spark-ast-lineage"
+name = "pyspark-ast-lineage"
 version = "0.1.0"
 description = "Static analysis of Spark table lineage using AST"
 authors = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-spark-ast-lineage = "spark_ast_lineage.cli:main"
+pyspark-ast-lineage = "pyspark_ast_lineage.cli:main"
 
 [dependency-groups]
 dev = [
