@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: black
+        name: Run Black
+        entry: uv run black --check .
+        language: system
+        types: [python]
+
+      - id: ruff
+        name: Run Ruff
+        entry: uv run ruff check .
+        language: system
+        types: [python]
