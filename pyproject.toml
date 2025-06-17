@@ -1,6 +1,6 @@
 [project]
 name = "pyspark-ast-lineage"
-version = "0.1.0"
+version = "0.1.1"
 description = "Static analysis of Spark table lineage using AST"
 authors = [
     { name = "Ricardo Espantaleón Pérez", email = "respantaleonp@outlook.es" },
